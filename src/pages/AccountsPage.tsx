@@ -235,7 +235,10 @@ export function AccountsPage() {
                 onClick={async () => {
                   if (!deletingAccount) return
                   try {
-                    await deleteAccount.mutateAsync(deletingAccount.id)
+                    await deleteAccount.mutateAsync({
+                      id: deletingAccount.id,
+                      itemName: deletingAccount.name,
+                    })
                     toast({ title: 'Hesap silindi' })
                   } catch (e: any) {
                     toast({

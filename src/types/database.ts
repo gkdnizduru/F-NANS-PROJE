@@ -36,6 +36,78 @@ export interface Database {
         }
         Relationships: []
       }
+      company_profiles: {
+        Row: {
+          user_id: string
+          company_name: string | null
+          logo_url: string | null
+          contact_name: string | null
+          contact_email: string | null
+          contact_phone: string | null
+          address: string | null
+          website: string | null
+        }
+        Insert: {
+          user_id: string
+          company_name?: string | null
+          logo_url?: string | null
+          contact_name?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          address?: string | null
+          website?: string | null
+        }
+        Update: {
+          user_id?: string
+          company_name?: string | null
+          logo_url?: string | null
+          contact_name?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          address?: string | null
+          website?: string | null
+        }
+        Relationships: []
+      }
+      activities: {
+        Row: {
+          id: string
+          user_id: string
+          customer_id: string | null
+          deal_id: string | null
+          type: 'task' | 'meeting' | 'call' | 'email'
+          subject: string
+          description: string | null
+          due_date: string | null
+          is_completed: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          customer_id?: string | null
+          deal_id?: string | null
+          type: 'task' | 'meeting' | 'call' | 'email'
+          subject: string
+          description?: string | null
+          due_date?: string | null
+          is_completed?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          customer_id?: string | null
+          deal_id?: string | null
+          type?: 'task' | 'meeting' | 'call' | 'email'
+          subject?: string
+          description?: string | null
+          due_date?: string | null
+          is_completed?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
       accounts: {
         Row: {
           id: string
@@ -153,6 +225,201 @@ export interface Database {
           bank_account?: string | null
           created_at?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      categories: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          type: 'income' | 'expense'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          type: 'income' | 'expense'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          type?: 'income' | 'expense'
+          created_at?: string
+        }
+        Relationships: []
+      }
+      products: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          description: string | null
+          unit_price: number
+          type: 'service' | 'product'
+          sku: string | null
+          stock_quantity: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          description?: string | null
+          unit_price: number
+          type?: 'service' | 'product'
+          sku?: string | null
+          stock_quantity?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          description?: string | null
+          unit_price?: number
+          type?: 'service' | 'product'
+          sku?: string | null
+          stock_quantity?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      quotes: {
+        Row: {
+          id: string
+          user_id: string
+          customer_id: string
+          quote_number: string
+          issue_date: string
+          expiry_date: string
+          status: 'draft' | 'sent' | 'accepted' | 'rejected' | 'converted'
+          subtotal: number
+          tax_rate: number
+          tax_amount: number
+          total_amount: number
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          customer_id: string
+          quote_number: string
+          issue_date: string
+          expiry_date: string
+          status?: 'draft' | 'sent' | 'accepted' | 'rejected' | 'converted'
+          subtotal: number
+          tax_rate: number
+          tax_amount: number
+          total_amount: number
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          customer_id?: string
+          quote_number?: string
+          issue_date?: string
+          expiry_date?: string
+          status?: 'draft' | 'sent' | 'accepted' | 'rejected' | 'converted'
+          subtotal?: number
+          tax_rate?: number
+          tax_amount?: number
+          total_amount?: number
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      quote_items: {
+        Row: {
+          id: string
+          quote_id: string
+          product_id: string | null
+          description: string
+          quantity: number
+          unit_price: number
+          amount: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          quote_id: string
+          product_id?: string | null
+          description: string
+          quantity: number
+          unit_price: number
+          amount: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          quote_id?: string
+          product_id?: string | null
+          description?: string
+          quantity?: number
+          unit_price?: number
+          amount?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      deals: {
+        Row: {
+          id: string
+          user_id: string
+          customer_id: string
+          title: string
+          value: number
+          stage: 'new' | 'meeting' | 'proposal' | 'negotiation' | 'won' | 'lost'
+          expected_close_date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          customer_id: string
+          title: string
+          value: number
+          stage?: 'new' | 'meeting' | 'proposal' | 'negotiation' | 'won' | 'lost'
+          expected_close_date: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          customer_id?: string
+          title?: string
+          value?: number
+          stage?: 'new' | 'meeting' | 'proposal' | 'negotiation' | 'won' | 'lost'
+          expected_close_date?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      activity_logs: {
+        Row: {
+          id: string
+          user_id: string
+          message: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          message: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          message?: string
+          created_at?: string
         }
         Relationships: []
       }

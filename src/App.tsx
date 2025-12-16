@@ -7,9 +7,15 @@ import { RegisterPage } from './pages/RegisterPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { FinancePage } from './pages/FinancePage'
 import { InvoicesPage } from './pages/InvoicesPage'
+import { InvoicesNewPage } from './pages/InvoicesNewPage'
 import { CustomersPage } from './pages/CustomersPage'
+import { CustomerDetail } from './pages/CustomerDetail'
 import { AccountsPage } from './pages/AccountsPage'
+import { ProductsPage } from './pages/ProductsPage'
+import { DealsPage } from './pages/DealsPage'
+import { QuotesPage } from './pages/QuotesPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { Activities } from './pages/Activities'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,10 +59,58 @@ function App() {
               }
             />
             <Route
+              path="/invoices/new"
+              element={
+                <ProtectedRoute>
+                  <InvoicesNewPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/firsatlar"
+              element={
+                <ProtectedRoute>
+                  <DealsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/aktiviteler"
+              element={
+                <ProtectedRoute>
+                  <Activities />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teklifler"
+              element={
+                <ProtectedRoute>
+                  <QuotesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/urun-hizmet"
+              element={
+                <ProtectedRoute>
+                  <ProductsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/musteriler"
               element={
                 <ProtectedRoute>
                   <CustomersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/customers/:id"
+              element={
+                <ProtectedRoute>
+                  <CustomerDetail />
                 </ProtectedRoute>
               }
             />

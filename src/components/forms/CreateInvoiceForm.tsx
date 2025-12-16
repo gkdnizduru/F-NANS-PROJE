@@ -39,9 +39,17 @@ const invoiceSchema = z.object({
 
 type CreateInvoiceValues = z.infer<typeof invoiceSchema>
 
+type InvoicePrefill = {
+  customerId?: string
+  taxRate?: number
+  notes?: string
+  items?: Array<{ description: string; quantity: number; unitPrice: number }>
+}
+
 type CreateInvoiceFormProps = {
   initialInvoice?: Database['public']['Tables']['invoices']['Row']
   initialItems?: Database['public']['Tables']['invoice_items']['Row'][]
+  prefill?: InvoicePrefill
   onSuccess?: () => void
 }
 
@@ -50,7 +58,7 @@ function createDefaultInvoiceNumber() {
   return `INV-${format(now, 'yyyyMMdd')}-${Math.floor(Math.random() * 9000 + 1000)}`
 }
 
-export function CreateInvoiceForm({ initialInvoice, initialItems, onSuccess }: CreateInvoiceFormProps) {
+export function CreateInvoiceForm({ initialInvoice, initialItems, prefill, onSuccess }: CreateInvoiceFormProps) {
   const { user } = useAuth()
   const customersQuery = useCustomers()
   const createInvoice = useCreateInvoice()
@@ -83,6 +91,26 @@ export function CreateInvoiceForm({ initialInvoice, initialItems, onSuccess }: C
       }
     }
 
+    if (!isEditing && prefill) {
+      const prefillItems = (prefill.items ?? []).length
+        ? (prefill.items ?? []).map((it) => ({
+            description: it.description,
+            quantity: Number(it.quantity ?? 1),
+            unitPrice: Number(it.unitPrice ?? 0),
+          }))
+        : [{ description: '', quantity: 1, unitPrice: 0 }]
+
+      return {
+        customerId: prefill.customerId ?? '',
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        invoiceNumber: createDefaultInvoiceNumber(),
+        taxRate: Number(prefill.taxRate ?? 20),
+        notes: prefill.notes ?? '',
+        items: prefillItems,
+      }
+    }
+
     return {
       customerId: '',
       invoiceDate: new Date(),
@@ -92,7 +120,7 @@ export function CreateInvoiceForm({ initialInvoice, initialItems, onSuccess }: C
       notes: '',
       items: [{ description: '', quantity: 1, unitPrice: 0 }],
     }
-  }, [initialInvoice, initialItems, isEditing])
+  }, [initialInvoice, initialItems, isEditing, prefill])
 
   const {
     register,

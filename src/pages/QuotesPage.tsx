@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AppLayout } from '../components/layout/AppLayout'
-import { TransactionForm } from '../components/forms/TransactionForm'
+import { CreateQuoteForm } from '../components/forms/CreateQuoteForm'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -12,13 +12,13 @@ import {
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../components/ui/sheet'
+import { Skeleton } from '../components/ui/skeleton'
+import { toast } from '../components/ui/use-toast'
 import { Calendar } from '../components/ui/calendar'
 import { Input } from '../components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover'
-import { Skeleton } from '../components/ui/skeleton'
-import { toast } from '../components/ui/use-toast'
-import { useAccounts, useCustomers, useDeleteTransaction, useTransactionsByDateRange } from '../hooks/useSupabaseQuery'
+import { useCustomers, useDeleteQuote, useQuotesByDateRange, useConvertQuoteToInvoice } from '../hooks/useSupabaseQuery'
 import { formatCurrency, formatShortDate } from '../lib/format'
 import { cn } from '../lib/utils'
 import type { Database } from '../types/database'
@@ -33,20 +33,54 @@ import {
   subMonths,
 } from 'date-fns'
 import { tr } from 'date-fns/locale'
-import { Calendar as CalendarIcon, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, Calendar as CalendarIcon, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
-type TransactionRow = Database['public']['Tables']['transactions']['Row']
+type QuoteRow = Database['public']['Tables']['quotes']['Row']
 
 type DateRange = {
   from?: Date
   to?: Date
 }
 
-export function FinancePage() {
+const quoteStatusLabels: Record<QuoteRow['status'], string> = {
+  draft: 'Taslak',
+  sent: 'Gönderildi',
+  accepted: 'Onaylandı',
+  rejected: 'Reddedildi',
+  converted: 'Faturaya Dönüştü',
+}
+
+const quoteBadgeVariants: Record<QuoteRow['status'], { variant: 'default' | 'secondary' | 'destructive' | 'outline'; className?: string }> = {
+  draft: {
+    variant: 'secondary',
+    className: 'border-transparent bg-gray-100 text-gray-800 dark:bg-gray-500/20 dark:text-gray-400 dark:border-gray-500/20',
+  },
+  sent: {
+    variant: 'outline',
+    className: 'border-transparent bg-yellow-100 text-yellow-800 dark:bg-yellow-500/15 dark:text-yellow-400 dark:border-yellow-500/20',
+  },
+  accepted: {
+    variant: 'outline',
+    className: 'border-transparent bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/20',
+  },
+  rejected: {
+    variant: 'destructive',
+    className: 'border-transparent bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/20',
+  },
+  converted: {
+    variant: 'outline',
+    className: 'border-transparent bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/20',
+  },
+}
+
+export function QuotesPage() {
+  const navigate = useNavigate()
   const now = new Date()
+
   const [open, setOpen] = useState(false)
-  const [editingTransaction, setEditingTransaction] = useState<TransactionRow | null>(null)
-  const [deletingTransaction, setDeletingTransaction] = useState<TransactionRow | null>(null)
+  const [editingQuote, setEditingQuote] = useState<QuoteRow | null>(null)
+  const [deletingQuote, setDeletingQuote] = useState<QuoteRow | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined)
 
@@ -65,65 +99,48 @@ export function FinancePage() {
     return `${from} - ${to}`
   }, [dateRange?.from, dateRange?.to])
 
-  const transactionsQuery = useTransactionsByDateRange({ from: dateFromStr, to: dateToStr })
+  const quotesQuery = useQuotesByDateRange({ from: dateFromStr, to: dateToStr })
   const customersQuery = useCustomers()
-  const accountsQuery = useAccounts()
-  const deleteTransaction = useDeleteTransaction()
+  const deleteQuote = useDeleteQuote()
+  const convertToInvoice = useConvertQuoteToInvoice()
 
-  const transactions = transactionsQuery.data ?? []
+  const quotes = quotesQuery.data ?? []
 
   const customersById = useMemo(() => {
     return new Map((customersQuery.data ?? []).map((c) => [c.id, c]))
   }, [customersQuery.data])
 
-  const accountsById = useMemo(() => {
-    return new Map((accountsQuery.data ?? []).map((a) => [a.id, a]))
-  }, [accountsQuery.data])
-
-  const filteredTransactions = useMemo(() => {
+  const filteredQuotes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    if (!q) return transactions
+    if (!q) return quotes
 
-    return transactions.filter((t) => {
-      const customer = t.customer_id ? customersById.get(t.customer_id) : undefined
-      const account = t.bank_account ? accountsById.get(t.bank_account) : undefined
-
-      const descriptionText = String((t as any)?.description ?? '').toLowerCase()
-      const categoryText = String(t.category ?? '').toLowerCase()
-      const accountText = String(account?.name ?? '').toLowerCase()
-      const customerText = String(customer?.name ?? '').toLowerCase()
-
-      return (
-        descriptionText.includes(q) ||
-        categoryText.includes(q) ||
-        accountText.includes(q) ||
-        customerText.includes(q)
-      )
+    return quotes.filter((row) => {
+      const quoteNo = String(row.quote_number ?? '').toLowerCase()
+      const customerName = String(customersById.get(row.customer_id)?.name ?? '').toLowerCase()
+      return quoteNo.includes(q) || customerName.includes(q)
     })
-  }, [accountsById, customersById, searchQuery, transactions])
+  }, [customersById, quotes, searchQuery])
 
   return (
-    <AppLayout title="Finans">
+    <AppLayout title="Teklifler">
       <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h2 className="text-2xl font-semibold">Finans</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Gelir ve gider işlemlerinizi yönetin
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold">Teklifler</h2>
+            <p className="text-sm text-muted-foreground mt-1">Tekliflerinizi oluşturun ve yönetin</p>
+          </div>
         </div>
 
-        {/* Table */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <CardTitle className="whitespace-nowrap">İşlemler</CardTitle>
+            <CardTitle className="whitespace-nowrap">Teklif Listesi</CardTitle>
             <div className="flex flex-1 min-w-0 items-center justify-end gap-2">
               <div className="relative w-full max-w-sm min-w-0">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Açıklama, kategori veya hesap ara..."
+                  placeholder="Teklif veya müşteri ara..."
                   className="pl-9"
                 />
               </div>
@@ -227,124 +244,130 @@ export function FinancePage() {
                 </PopoverContent>
               </Popover>
 
-              <Dialog
+              <Sheet
                 open={open}
                 onOpenChange={(v) => {
                   setOpen(v)
-                  if (!v) setEditingTransaction(null)
+                  if (!v) setEditingQuote(null)
                 }}
               >
-                <Button
-                  onClick={() => {
-                    setEditingTransaction(null)
-                    setOpen(true)
-                  }}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Yeni İşlem Ekle
-                </Button>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>{editingTransaction ? 'İşlemi Düzenle' : 'Yeni İşlem'}</DialogTitle>
-                  </DialogHeader>
-                  <TransactionForm
-                    initialTransaction={editingTransaction ?? undefined}
-                    onSuccess={() => {
-                      setOpen(false)
-                      toast({
-                        title: editingTransaction ? 'İşlem güncellendi' : 'İşlem oluşturuldu',
-                      })
-                      setEditingTransaction(null)
+                <SheetTrigger asChild>
+                  <Button
+                    onClick={() => {
+                      setEditingQuote(null)
                     }}
-                  />
-                </DialogContent>
-              </Dialog>
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Yeni Teklif
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-full sm:w-[540px] lg:w-[900px] overflow-y-auto">
+                  <SheetHeader>
+                    <SheetTitle>{editingQuote ? 'Teklifi Düzenle' : 'Teklif Oluştur'}</SheetTitle>
+                  </SheetHeader>
+                  <div className="px-6 pb-6">
+                    <CreateQuoteForm
+                      initialQuote={editingQuote ?? undefined}
+                      onSuccess={() => {
+                        setOpen(false)
+                        toast({
+                          title: editingQuote ? 'Teklif güncellendi' : 'Teklif oluşturuldu',
+                        })
+                        setEditingQuote(null)
+                      }}
+                    />
+                  </div>
+                </SheetContent>
+              </Sheet>
             </div>
           </CardHeader>
           <CardContent>
-            {transactionsQuery.isLoading ? (
+            {quotesQuery.isLoading ? (
               <div className="space-y-3">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
               </div>
-            ) : transactionsQuery.isError ? (
+            ) : quotesQuery.isError ? (
               <p className="text-sm text-destructive">
-                {(transactionsQuery.error as any)?.message || 'İşlemler yüklenemedi'}
+                {(quotesQuery.error as any)?.message || 'Teklifler yüklenemedi'}
               </p>
             ) : (
               <div className="rounded-md border">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                        Tarih
-                      </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                        Tür
-                      </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                        Kategori
-                      </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                        Hesap
-                      </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                        Müşteri
-                      </th>
-                      <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
-                        Tutar
-                      </th>
-                      <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
-                        İşlem
-                      </th>
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Teklif No</th>
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Müşteri</th>
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Tarih</th>
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Durum</th>
+                      <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Toplam</th>
+                      <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">İşlem</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredTransactions.length === 0 ? (
+                    {filteredQuotes.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="h-32 text-center">
-                          <p className="text-sm text-muted-foreground">
-                            Henüz işlem bulunamadı.
-                          </p>
+                        <td colSpan={6} className="h-32 text-center">
+                          <p className="text-sm text-muted-foreground">Teklif listeniz boş.</p>
                         </td>
                       </tr>
                     ) : (
-                      filteredTransactions.map((t) => {
-                        const customer = t.customer_id ? customersById.get(t.customer_id) : undefined
-                        const account = t.bank_account ? accountsById.get(t.bank_account) : undefined
+                      filteredQuotes.map((q) => {
+                        const customerName = customersById.get(q.customer_id)?.name ?? '-'
+                        const badge = quoteBadgeVariants[q.status]
+
                         return (
-                          <tr key={t.id} className="border-b">
-                            <td className="p-4">{formatShortDate(t.transaction_date)}</td>
+                          <tr key={q.id} className="border-b">
+                            <td className="p-4 font-medium">{q.quote_number}</td>
+                            <td className="p-4">{customerName}</td>
+                            <td className="p-4">{formatShortDate(q.issue_date)}</td>
                             <td className="p-4">
-                              <Badge
-                                variant={t.type === 'expense' ? 'destructive' : 'default'}
-                                className={t.type === 'income' ? 'bg-emerald-500 hover:bg-emerald-500/90 text-white border-transparent' : undefined}
-                              >
-                                {t.type === 'income' ? 'Gelir' : 'Gider'}
+                              <Badge variant={badge.variant} className={badge.className}>
+                                {quoteStatusLabels[q.status]}
                               </Badge>
                             </td>
-                            <td className="p-4">{t.category}</td>
-                            <td className="p-4">{account?.name || '-'}</td>
-                            <td className="p-4">{customer?.name || '-'}</td>
-                            <td className="p-4 text-right font-medium">{formatCurrency(Number(t.amount))}</td>
+                            <td className="p-4 text-right tabular-nums">{formatCurrency(Number(q.total_amount ?? 0))}</td>
                             <td className="p-4 text-right">
                               <div className="flex justify-end gap-2">
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   onClick={() => {
-                                    setEditingTransaction(t)
+                                    setEditingQuote(q)
                                     setOpen(true)
                                   }}
                                 >
                                   <Pencil className="mr-2 h-4 w-4" />
                                   Düzenle
                                 </Button>
+
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={q.status === 'converted' || convertToInvoice.isPending}
+                                  onClick={async () => {
+                                    try {
+                                      const invoiceId = await convertToInvoice.mutateAsync({ quoteId: q.id })
+                                      toast({ title: 'Faturaya dönüştürüldü' })
+                                      navigate(`/faturalar?open=${invoiceId}`)
+                                    } catch (e: any) {
+                                      toast({
+                                        title: 'Dönüştürme başarısız',
+                                        description: e?.message || 'Bilinmeyen hata',
+                                        variant: 'destructive',
+                                      })
+                                    }
+                                  }}
+                                >
+                                  <ArrowRightLeft className="mr-2 h-4 w-4" />
+                                  Faturaya Dönüştür
+                                </Button>
+
                                 <Button
                                   variant="destructive"
                                   size="sm"
-                                  onClick={() => setDeletingTransaction(t)}
+                                  onClick={() => setDeletingQuote(q)}
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />
                                   Sil
@@ -363,9 +386,9 @@ export function FinancePage() {
         </Card>
 
         <AlertDialog
-          open={Boolean(deletingTransaction)}
+          open={Boolean(deletingQuote)}
           onOpenChange={(v) => {
-            if (!v) setDeletingTransaction(null)
+            if (!v) setDeletingQuote(null)
           }}
         >
           <AlertDialogContent>
@@ -376,28 +399,25 @@ export function FinancePage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <Button variant="outline" onClick={() => setDeletingTransaction(null)}>
+              <Button variant="outline" onClick={() => setDeletingQuote(null)}>
                 Vazgeç
               </Button>
               <Button
                 variant="destructive"
-                disabled={deleteTransaction.isPending || !deletingTransaction}
+                disabled={deleteQuote.isPending || !deletingQuote}
                 onClick={async () => {
-                  if (!deletingTransaction) return
+                  if (!deletingQuote) return
                   try {
-                    await deleteTransaction.mutateAsync({
-                      id: deletingTransaction.id,
-                      itemName: `${deletingTransaction.category} (${Number(deletingTransaction.amount).toLocaleString('tr-TR')} TL)`,
-                    })
-                    toast({ title: 'İşlem silindi' })
+                    await deleteQuote.mutateAsync({ id: deletingQuote.id, itemName: deletingQuote.quote_number })
+                    toast({ title: 'Teklif silindi' })
                   } catch (e: any) {
                     toast({
                       title: 'Silme işlemi başarısız',
-                      description: e?.message,
+                      description: e?.message || 'Bilinmeyen hata',
                       variant: 'destructive',
                     })
                   } finally {
-                    setDeletingTransaction(null)
+                    setDeletingQuote(null)
                   }
                 }}
               >

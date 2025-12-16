@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../theme-provider'
@@ -9,6 +9,10 @@ import {
   LayoutDashboard,
   Wallet,
   Banknote,
+  ShoppingBag,
+  Kanban,
+  Calendar,
+  FileSignature,
   FileText,
   Users,
   Settings,
@@ -23,23 +27,43 @@ import {
 interface AppLayoutProps {
   children: React.ReactNode
   title?: string
+  headerRight?: React.ReactNode
 }
 
 const menuItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/kasa-banka', label: 'Kasa & Banka', icon: Wallet },
   { path: '/finans', label: 'Finans', icon: Banknote },
+  { path: '/urun-hizmet', label: 'Ürün/Hizmet', icon: ShoppingBag },
+  { path: '/firsatlar', label: 'Fırsatlar', icon: Kanban },
+  { path: '/aktiviteler', label: 'Aktiviteler', icon: Calendar },
+  { path: '/teklifler', label: 'Teklifler', icon: FileSignature },
   { path: '/faturalar', label: 'Faturalar', icon: FileText },
   { path: '/musteriler', label: 'Müşteriler', icon: Users },
   { path: '/ayarlar', label: 'Ayarlar', icon: Settings },
 ]
 
-export function AppLayout({ children, title = 'Dashboard' }: AppLayoutProps) {
+export function AppLayout({ children, title = 'Dashboard', headerRight }: AppLayoutProps) {
   const { user, signOut } = useAuth()
   const { resolvedTheme, toggleTheme } = useTheme()
   const navigate = useNavigate()
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sidebar-collapsed')
+      return saved ? (JSON.parse(saved) as boolean) : false
+    } catch {
+      return false
+    }
+  })
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebar-collapsed', JSON.stringify(isCollapsed))
+    } catch {
+      // ignore
+    }
+  }, [isCollapsed])
 
   const handleLogout = async () => {
     await signOut()
@@ -196,7 +220,7 @@ export function AppLayout({ children, title = 'Dashboard' }: AppLayoutProps) {
             </div>
 
             <div className="flex items-center gap-3">
-              {/* Global filters will be inserted here by pages */}
+              {headerRight}
             </div>
           </div>
         </header>

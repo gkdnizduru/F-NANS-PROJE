@@ -58,3 +58,44 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  html,
+  body {
+    background: white !important;
+    color: #111827 !important;
+    height: auto !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+    transform: none !important;
+  }
+
+  #printable-invoice,
+  #printable-invoice *,
+  #invoice-content,
+  #invoice-content * {
+    visibility: visible !important;
+  }
+
+  #printable-invoice,
+  #invoice-content {
+    position: fixed !important;
+    left: 50% !important;
+    top: 0 !important;
+    margin: 0 !important;
+    width: 210mm !important;
+    transform: translateX(-50%) !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AppLayout } from '../components/layout/AppLayout'
 import { CustomerForm } from '../components/forms/CustomerForm'
 import {
@@ -12,75 +13,100 @@ import {
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog'
+import { Input } from '../components/ui/input'
 import { Skeleton } from '../components/ui/skeleton'
 import { toast } from '../components/ui/use-toast'
 import { useCustomers, useDeleteCustomer, useDeleteCustomerCascade } from '../hooks/useSupabaseQuery'
 import type { Database } from '../types/database'
-import { Building2, Pencil, Plus, Trash2, User } from 'lucide-react'
+import { Building2, Pencil, Plus, Search, Trash2, User } from 'lucide-react'
 
 type CustomerRow = Database['public']['Tables']['customers']['Row']
 
 export function CustomersPage() {
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null)
   const [deletingCustomer, setDeletingCustomer] = useState<CustomerRow | null>(null)
   const [cascadeDeletingCustomer, setCascadeDeletingCustomer] = useState<CustomerRow | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const customersQuery = useCustomers()
   const deleteCustomer = useDeleteCustomer()
   const deleteCustomerCascade = useDeleteCustomerCascade()
 
   const customers = customersQuery.data ?? []
 
+  const filteredCustomers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return customers
+
+    return customers.filter((c) => {
+      const name = String(c.name ?? '').toLowerCase()
+      const email = String(c.email ?? '').toLowerCase()
+      const phone = String(c.phone ?? '').toLowerCase()
+      return name.includes(q) || email.includes(q) || phone.includes(q)
+    })
+  }, [customers, searchQuery])
+
   return (
     <AppLayout title="Müşteriler">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold">Müşteriler</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Müşteri bilgilerinizi yönetin
-            </p>
-          </div>
-          <Dialog
-            open={open}
-            onOpenChange={(v) => {
-              setOpen(v)
-              if (!v) setEditingCustomer(null)
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button
-                onClick={() => {
-                  setEditingCustomer(null)
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Müşteri Ekle
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{editingCustomer ? 'Müşteriyi Düzenle' : 'Yeni Müşteri'}</DialogTitle>
-              </DialogHeader>
-              <CustomerForm
-                initialCustomer={editingCustomer ?? undefined}
-                onSuccess={() => {
-                  setOpen(false)
-                  toast({
-                    title: editingCustomer ? 'Müşteri güncellendi' : 'Müşteri oluşturuldu',
-                  })
-                  setEditingCustomer(null)
-                }}
-              />
-            </DialogContent>
-          </Dialog>
+        <div>
+          <h2 className="text-2xl font-semibold">Müşteriler</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Müşteri bilgilerinizi yönetin
+          </p>
         </div>
 
         {/* Table */}
         <Card>
-          <CardHeader>
-            <CardTitle>Müşteri Listesi</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <CardTitle className="whitespace-nowrap">Müşteri Listesi</CardTitle>
+            <div className="flex flex-1 min-w-0 items-center justify-end gap-2">
+              <div className="relative w-full max-w-sm min-w-0">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Müşteri, e-posta veya telefon ara..."
+                  className="pl-9"
+                />
+              </div>
+
+              <Dialog
+                open={open}
+                onOpenChange={(v) => {
+                  setOpen(v)
+                  if (!v) setEditingCustomer(null)
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button
+                    onClick={() => {
+                      setEditingCustomer(null)
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Müşteri Ekle
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{editingCustomer ? 'Müşteriyi Düzenle' : 'Yeni Müşteri'}</DialogTitle>
+                  </DialogHeader>
+                  <CustomerForm
+                    initialCustomer={editingCustomer ?? undefined}
+                    onSuccess={() => {
+                      setOpen(false)
+                      toast({
+                        title: editingCustomer ? 'Müşteri güncellendi' : 'Müşteri oluşturuldu',
+                      })
+                      setEditingCustomer(null)
+                    }}
+                  />
+                </DialogContent>
+              </Dialog>
+            </div>
           </CardHeader>
           <CardContent>
             {customersQuery.isLoading ? (
@@ -113,7 +139,7 @@ export function CustomersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {customers.length === 0 ? (
+                  {filteredCustomers.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="h-32 text-center">
                         <p className="text-sm text-muted-foreground">
@@ -122,15 +148,15 @@ export function CustomersPage() {
                       </td>
                     </tr>
                   ) : (
-                    customers.map((customer) => (
+                    filteredCustomers.map((customer) => (
                       <tr key={customer.id} className="border-b">
                         <td className="p-4">
                           <div className="flex items-center gap-3">
                             <div
                               className={
                                 customer.type === 'corporate'
-                                  ? 'h-8 w-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center'
-                                  : 'h-8 w-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center'
+                                  ? 'h-8 w-8 rounded-full bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400 flex items-center justify-center'
+                                  : 'h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 flex items-center justify-center'
                               }
                             >
                               {customer.type === 'corporate' ? (
@@ -139,7 +165,13 @@ export function CustomersPage() {
                                 <User className="h-4 w-4" />
                               )}
                             </div>
-                            <span className="font-medium">{customer.name}</span>
+                            <button
+                              type="button"
+                              className="font-medium text-left hover:underline"
+                              onClick={() => navigate(`/customers/${customer.id}`)}
+                            >
+                              {customer.name}
+                            </button>
                           </div>
                         </td>
                         <td className="p-4">{customer.phone || '-'}</td>
@@ -200,7 +232,10 @@ export function CustomersPage() {
                 onClick={async () => {
                   if (!deletingCustomer) return
                   try {
-                    await deleteCustomer.mutateAsync(deletingCustomer.id)
+                    await deleteCustomer.mutateAsync({
+                      id: deletingCustomer.id,
+                      itemName: deletingCustomer.name,
+                    })
                     toast({ title: 'Müşteri silindi' })
                   } catch (e: any) {
                     const code = e?.code as string | undefined
@@ -258,7 +293,10 @@ export function CustomersPage() {
                 onClick={async () => {
                   if (!cascadeDeletingCustomer) return
                   try {
-                    await deleteCustomerCascade.mutateAsync(cascadeDeletingCustomer.id)
+                    await deleteCustomerCascade.mutateAsync({
+                      id: cascadeDeletingCustomer.id,
+                      itemName: cascadeDeletingCustomer.name,
+                    })
                     toast({ title: 'Müşteri ve faturaları silindi' })
                   } catch (e: any) {
                     toast({

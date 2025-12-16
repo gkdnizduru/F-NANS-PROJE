@@ -7,8 +7,551 @@ type Tables = Database['public']['Tables']
 type AccountRow = Tables['accounts']['Row']
 type CustomerRow = Tables['customers']['Row']
 type TransactionRow = Tables['transactions']['Row']
+type CategoryRow = Tables['categories']['Row']
+type ProductRow = Tables['products']['Row']
+type QuoteRow = Tables['quotes']['Row']
+type QuoteItemRow = Tables['quote_items']['Row']
+type DealRow = Tables['deals']['Row']
+type ActivityLogRow = Tables['activity_logs']['Row']
 type InvoiceRow = Tables['invoices']['Row']
 type InvoiceItemRow = Tables['invoice_items']['Row']
+type ActivityRow = Tables['activities']['Row']
+
+async function logActivity(message: string) {
+  const { data } = await supabase.auth.getUser()
+  const userId = data.user?.id
+  if (!userId) return
+
+  const { error } = await supabase.from('activity_logs').insert({
+    user_id: userId,
+    message,
+  })
+
+  if (error) {
+    console.warn('Activity log insert failed:', error)
+  }
+}
+
+export function useCategories(type?: 'income' | 'expense') {
+  return useQuery<CategoryRow[]>({
+    queryKey: ['categories', type],
+    queryFn: async () => {
+      let query = supabase.from('categories').select('*')
+
+      if (type) {
+        query = query.eq('type', type)
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useActivities() {
+  return useQuery<ActivityRow[]>({
+    queryKey: ['activities'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('activities')
+        .select('*')
+        .order('due_date', { ascending: true, nullsFirst: false })
+
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useCustomerActivities(customerId?: string) {
+  return useQuery<ActivityRow[]>({
+    queryKey: ['activities', 'customer', customerId],
+    enabled: Boolean(customerId),
+    queryFn: async () => {
+      if (!customerId) return []
+
+      const { data, error } = await supabase
+        .from('activities')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('due_date', { ascending: true, nullsFirst: false })
+
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useCreateActivity() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: Tables['activities']['Insert']) => {
+      const { data, error } = await supabase.from('activities').insert(payload).select().single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activities'] })
+      queryClient.invalidateQueries({ queryKey: ['activities', 'customer'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+    },
+  })
+}
+
+export function useUpdateActivity() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; patch: Tables['activities']['Update'] }) => {
+      const { data, error } = await supabase
+        .from('activities')
+        .update(payload.patch)
+        .eq('id', payload.id)
+        .select()
+        .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['activities'] })
+      queryClient.invalidateQueries({ queryKey: ['activities', 'customer'] })
+      const customerId = (vars.patch as any)?.customer_id as string | undefined
+      if (customerId) queryClient.invalidateQueries({ queryKey: ['activities', 'customer', customerId] })
+    },
+  })
+}
+
+export function useToggleActivityCompleted() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; is_completed: boolean }) => {
+      const { data, error } = await supabase
+        .from('activities')
+        .update({ is_completed: payload.is_completed })
+        .eq('id', payload.id)
+        .select()
+        .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activities'] })
+      queryClient.invalidateQueries({ queryKey: ['activities', 'customer'] })
+    },
+  })
+}
+
+export function useDeleteActivity() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string }) => {
+      const { error } = await supabase.from('activities').delete().eq('id', payload.id)
+      if (error) throw error
+      return true
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activities'] })
+      queryClient.invalidateQueries({ queryKey: ['activities', 'customer'] })
+    },
+  })
+}
+
+export function useDeals() {
+  return useQuery<DealRow[]>({
+    queryKey: ['deals'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('deals')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useCreateDeal() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (deal: Tables['deals']['Insert']) => {
+      const { data, error } = await supabase
+        .from('deals')
+        .insert(deal)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      const title = (data as any)?.title as string | undefined
+      if (title) {
+        await logActivity(`"${title}" fırsatı oluşturuldu.`)
+      }
+
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deals'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useUpdateDeal() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; patch: Tables['deals']['Update'] }) => {
+      const { data, error } = await supabase
+        .from('deals')
+        .update(payload.patch)
+        .eq('id', payload.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deals'] })
+    },
+  })
+}
+
+export function useDeleteDeal() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; itemName: string }) => {
+      const { error } = await supabase.from('deals').delete().eq('id', payload.id)
+      if (error) throw error
+
+      await logActivity(`"${payload.itemName}" kaydı silindi.`)
+      return payload.id
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deals'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useQuotes() {
+  return useQuotesByDateRange()
+}
+
+export function useQuotesByDateRange(params?: { from?: string; to?: string }) {
+  const fromKey = params?.from ?? 'all'
+  const toKey = params?.to ?? 'all'
+
+  return useQuery<QuoteRow[]>({
+    queryKey: ['quotes', fromKey, toKey],
+    queryFn: async () => {
+      let q = supabase
+        .from('quotes')
+        .select('*')
+        .order('issue_date', { ascending: false })
+
+      if (params?.from) {
+        q = q.gte('issue_date', params.from)
+      }
+
+      if (params?.to) {
+        q = q.lte('issue_date', params.to)
+      }
+
+      const { data, error } = await q
+
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useQuoteItems(quoteId?: string | null) {
+  return useQuery<QuoteItemRow[]>({
+    queryKey: ['quote_items', quoteId],
+    enabled: Boolean(quoteId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('quote_items')
+        .select('*')
+        .eq('quote_id', quoteId as string)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useCreateQuote() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: {
+      quote: Tables['quotes']['Insert']
+      items: Array<Omit<Tables['quote_items']['Insert'], 'quote_id'>>
+    }) => {
+      const { data: quote, error: quoteError } = await supabase
+        .from('quotes')
+        .insert(payload.quote)
+        .select()
+        .single()
+
+      if (quoteError) throw quoteError
+
+      const quoteId = (quote as any).id as string
+      const itemsToInsert: Tables['quote_items']['Insert'][] = payload.items.map((it) => ({
+        ...it,
+        quote_id: quoteId,
+      }))
+
+      const { error: itemsError } = await supabase
+        .from('quote_items')
+        .insert(itemsToInsert)
+
+      if (itemsError) {
+        await supabase.from('quotes').delete().eq('id', quoteId)
+        throw itemsError
+      }
+
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('name')
+        .eq('id', payload.quote.customer_id)
+        .single()
+
+      const customerName = (customer as any)?.name as string | undefined
+      const totalAmount = Number((quote as any)?.total_amount ?? payload.quote.total_amount ?? 0)
+      await logActivity(
+        `"${customerName ?? 'Müşteri'}" için ${totalAmount.toLocaleString('tr-TR')} TL tutarında teklif oluşturuldu.`
+      )
+
+      return quote
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useUpdateQuote() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: {
+      id: string
+      quote: Tables['quotes']['Update']
+      items: Array<Omit<Tables['quote_items']['Insert'], 'quote_id'>>
+    }) => {
+      const { data: quote, error: quoteError } = await supabase
+        .from('quotes')
+        .update(payload.quote)
+        .eq('id', payload.id)
+        .select()
+        .single()
+
+      if (quoteError) throw quoteError
+
+      const { error: deleteItemsError } = await supabase
+        .from('quote_items')
+        .delete()
+        .eq('quote_id', payload.id)
+
+      if (deleteItemsError) throw deleteItemsError
+
+      const itemsToInsert: Tables['quote_items']['Insert'][] = payload.items.map((it) => ({
+        ...it,
+        quote_id: payload.id,
+      }))
+
+      const { error: itemsError } = await supabase
+        .from('quote_items')
+        .insert(itemsToInsert)
+
+      if (itemsError) throw itemsError
+
+      return quote
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] })
+      queryClient.invalidateQueries({ queryKey: ['quote_items', variables.id] })
+    },
+  })
+}
+
+export function useDeleteQuote() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; itemName: string }) => {
+      const { error } = await supabase.from('quotes').delete().eq('id', payload.id)
+      if (error) throw error
+
+      await logActivity(`"${payload.itemName}" kaydı silindi.`)
+      return payload.id
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] })
+      queryClient.invalidateQueries({ queryKey: ['quote_items', variables.id] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useConvertQuoteToInvoice() {
+  const queryClient = useQueryClient()
+
+  const createInvoiceNumber = () => {
+    const now = new Date()
+    const yyyy = now.getFullYear()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
+    const rand = Math.floor(Math.random() * 9000 + 1000)
+    return `INV-${yyyy}${mm}${dd}-${rand}`
+  }
+
+  return useMutation({
+    mutationFn: async (payload: { quoteId: string }) => {
+      const quoteId = payload.quoteId
+
+      const { data: quote, error: quoteError } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('id', quoteId)
+        .single()
+
+      if (quoteError) throw quoteError
+
+      const { data: items, error: itemsError } = await supabase
+        .from('quote_items')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .order('created_at', { ascending: true })
+
+      if (itemsError) throw itemsError
+
+      const invoiceInsert: Tables['invoices']['Insert'] = {
+        user_id: (quote as any).user_id,
+        customer_id: (quote as any).customer_id,
+        invoice_number: createInvoiceNumber(),
+        invoice_date: (quote as any).issue_date,
+        due_date: (quote as any).expiry_date,
+        status: 'draft',
+        subtotal: Number((quote as any).subtotal ?? 0),
+        tax_amount: Number((quote as any).tax_amount ?? 0),
+        total_amount: Number((quote as any).total_amount ?? 0),
+        notes: (quote as any).notes ?? null,
+      }
+
+      const { data: invoice, error: invoiceError } = await supabase
+        .from('invoices')
+        .insert(invoiceInsert)
+        .select()
+        .single()
+
+      if (invoiceError) throw invoiceError
+
+      const invoiceId = (invoice as any).id as string
+      const taxRate = Number((quote as any).tax_rate ?? 0)
+
+      const invoiceItems: Tables['invoice_items']['Insert'][] = (items ?? []).map((it: any) => ({
+        invoice_id: invoiceId,
+        description: String(it.description ?? ''),
+        quantity: Number(it.quantity ?? 0),
+        unit_price: Number(it.unit_price ?? 0),
+        tax_rate: taxRate,
+        amount: Number(it.amount ?? 0),
+      }))
+
+      const { error: invoiceItemsError } = await supabase
+        .from('invoice_items')
+        .insert(invoiceItems)
+
+      if (invoiceItemsError) {
+        await supabase.from('invoices').delete().eq('id', invoiceId)
+        throw invoiceItemsError
+      }
+
+      const { error: markConvertedError } = await supabase
+        .from('quotes')
+        .update({ status: 'converted' })
+        .eq('id', quoteId)
+
+      if (markConvertedError) throw markConvertedError
+
+      await logActivity(`"${(quote as any).quote_number}" teklifi faturaya dönüştürüldü.`)
+
+      return invoiceId
+    },
+    onSuccess: (_data) => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useCreateCategory() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (category: Tables['categories']['Insert']) => {
+      const { data, error } = await supabase
+        .from('categories')
+        .insert(category)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categories'] })
+    },
+  })
+}
+
+export function useDeleteCategory() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; itemName: string }) => {
+      const { error } = await supabase.from('categories').delete().eq('id', payload.id)
+      if (error) throw error
+
+      await logActivity(`"${payload.itemName}" kaydı silindi.`)
+      return payload.id
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categories'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useActivityLogs(limit = 10) {
+  return useQuery<ActivityLogRow[]>({
+    queryKey: ['activity_logs', limit],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
 
 export function useAccounts() {
   return useQuery<AccountRow[]>({
@@ -50,13 +593,16 @@ export function useDeleteCustomer() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('customers').delete().eq('id', id)
+    mutationFn: async (payload: { id: string; itemName: string }) => {
+      const { error } = await supabase.from('customers').delete().eq('id', payload.id)
       if (error) throw error
-      return id
+
+      await logActivity(`"${payload.itemName}" kaydı silindi.`)
+      return payload.id
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
     },
   })
 }
@@ -65,7 +611,73 @@ export function useDeleteCustomerCascade() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (customerId: string) => {
+    mutationFn: async (payload: { id: string; itemName: string }) => {
+      const customerId = payload.id
+
+      const { data: quotes, error: quotesError } = await supabase
+        .from('quotes')
+        .select('id')
+        .eq('customer_id', customerId)
+
+      if (quotesError) throw quotesError
+
+      const quoteIds = (quotes ?? []).map((q) => q.id)
+
+      if (quoteIds.length > 0) {
+        const { error: deleteQuoteItemsError } = await supabase
+          .from('quote_items')
+          .delete()
+          .in('quote_id', quoteIds)
+
+        if (deleteQuoteItemsError) throw deleteQuoteItemsError
+
+        const { error: deleteQuotesError } = await supabase
+          .from('quotes')
+          .delete()
+          .eq('customer_id', customerId)
+
+        if (deleteQuotesError) throw deleteQuotesError
+      }
+
+      const { data: deals, error: dealsError } = await supabase
+        .from('deals')
+        .select('id')
+        .eq('customer_id', customerId)
+
+      if (dealsError) throw dealsError
+
+      const dealIds = (deals ?? []).map((d) => d.id)
+
+      const { error: deleteCustomerActivitiesError } = await supabase
+        .from('activities')
+        .delete()
+        .eq('customer_id', customerId)
+
+      if (deleteCustomerActivitiesError) throw deleteCustomerActivitiesError
+
+      if (dealIds.length > 0) {
+        const { error: deleteDealActivitiesError } = await supabase
+          .from('activities')
+          .delete()
+          .in('deal_id', dealIds)
+
+        if (deleteDealActivitiesError) throw deleteDealActivitiesError
+
+        const { error: deleteDealsError } = await supabase
+          .from('deals')
+          .delete()
+          .eq('customer_id', customerId)
+
+        if (deleteDealsError) throw deleteDealsError
+      }
+
+      const { error: detachTransactionsError } = await supabase
+        .from('transactions')
+        .update({ customer_id: null })
+        .eq('customer_id', customerId)
+
+      if (detachTransactionsError) throw detachTransactionsError
+
       const { data: invoices, error: invoicesError } = await supabase
         .from('invoices')
         .select('id')
@@ -97,11 +709,18 @@ export function useDeleteCustomerCascade() {
         .eq('id', customerId)
 
       if (deleteCustomerError) throw deleteCustomerError
+
+      await logActivity(`"${payload.itemName}" kaydı silindi.`)
       return customerId
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['quotes'] })
+      queryClient.invalidateQueries({ queryKey: ['deals'] })
+      queryClient.invalidateQueries({ queryKey: ['activities'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
     },
   })
 }
@@ -131,13 +750,97 @@ export function useDeleteTransaction() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('transactions').delete().eq('id', id)
+    mutationFn: async (payload: { id: string; itemName: string }) => {
+      const { error } = await supabase.from('transactions').delete().eq('id', payload.id)
       if (error) throw error
-      return id
+
+      await logActivity(`"${payload.itemName}" kaydı silindi.`)
+      return payload.id
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useProducts() {
+  return useQuery<ProductRow[]>({
+    queryKey: ['products'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useCreateProduct() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (product: Tables['products']['Insert']) => {
+      const { data, error } = await supabase
+        .from('products')
+        .insert(product)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      const name = (data as any)?.name as string | undefined
+      if (name) {
+        await logActivity(`"${name}" ürünü/hizmeti eklendi.`)
+      }
+
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useUpdateProduct() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; patch: Tables['products']['Update'] }) => {
+      const { data, error } = await supabase
+        .from('products')
+        .update(payload.patch)
+        .eq('id', payload.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+    },
+  })
+}
+
+export function useDeleteProduct() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; itemName: string }) => {
+      const { error } = await supabase.from('products').delete().eq('id', payload.id)
+      if (error) throw error
+
+      await logActivity(`"${payload.itemName}" kaydı silindi.`)
+      return payload.id
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
     },
   })
 }
@@ -167,13 +870,16 @@ export function useDeleteAccount() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('accounts').delete().eq('id', id)
+    mutationFn: async (payload: { id: string; itemName: string }) => {
+      const { error } = await supabase.from('accounts').delete().eq('id', payload.id)
       if (error) throw error
-      return id
+
+      await logActivity(`"${payload.itemName}" kaydı silindi.`)
+      return payload.id
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
     },
   })
 }
@@ -227,14 +933,17 @@ export function useDeleteInvoice() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('invoices').delete().eq('id', id)
+    mutationFn: async (payload: { id: string; itemName: string }) => {
+      const { error } = await supabase.from('invoices').delete().eq('id', payload.id)
       if (error) throw error
-      return id
+
+      await logActivity(`"${payload.itemName}" kaydı silindi.`)
+      return payload.id
     },
-    onSuccess: (_data, id) => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      queryClient.invalidateQueries({ queryKey: ['invoice_items', id] })
+      queryClient.invalidateQueries({ queryKey: ['invoice_items', variables.id] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
     },
   })
 }
@@ -287,10 +996,23 @@ export function useCreateInvoice() {
         throw itemsError
       }
 
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('name')
+        .eq('id', payload.invoice.customer_id)
+        .single()
+
+      const customerName = (customer as any)?.name as string | undefined
+      const totalAmount = Number((invoice as any)?.total_amount ?? payload.invoice.total_amount ?? 0)
+      await logActivity(
+        `"${customerName ?? 'Müşteri'}" için ${totalAmount.toLocaleString('tr-TR')} TL tutarında fatura oluşturuldu.`
+      )
+
       return invoice
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
     },
   })
 }
@@ -306,6 +1028,94 @@ export function useCustomers() {
       
       if (error) throw error
       return data ?? []
+    },
+  })
+}
+
+export function useCustomer(customerId?: string | null) {
+  return useQuery<CustomerRow | null>({
+    queryKey: ['customers', customerId],
+    enabled: Boolean(customerId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('id', customerId as string)
+        .single()
+
+      if (error) throw error
+      return (data ?? null) as CustomerRow | null
+    },
+  })
+}
+
+export function useCustomerInvoices(customerId?: string | null) {
+  return useQuery<
+    Array<
+      InvoiceRow & {
+        invoice_items?: InvoiceItemRow[] | null
+      }
+    >
+  >({
+    queryKey: ['customer_invoices', customerId],
+    enabled: Boolean(customerId),
+    queryFn: async () => {
+      const { data, error } = (await supabase
+        .from('invoices')
+        .select('*, invoice_items(*)')
+        .eq('customer_id', customerId as string)
+        .order('invoice_date', { ascending: false })) as any
+
+      if (error) throw error
+      return (data ?? []) as Array<
+        InvoiceRow & {
+          invoice_items?: InvoiceItemRow[] | null
+        }
+      >
+    },
+  })
+}
+
+export function useCustomerDeals(customerId?: string | null) {
+  return useQuery<DealRow[]>({
+    queryKey: ['customer_deals', customerId],
+    enabled: Boolean(customerId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('deals')
+        .select('*')
+        .eq('customer_id', customerId as string)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useCustomerQuotes(customerId?: string | null) {
+  return useQuery<
+    Array<
+      QuoteRow & {
+        quote_items?: QuoteItemRow[] | null
+      }
+    >
+  >({
+    queryKey: ['customer_quotes', customerId],
+    enabled: Boolean(customerId),
+    queryFn: async () => {
+      const { data, error } = (await supabase
+        .from('quotes')
+        .select('*, quote_items(*)')
+        .eq('customer_id', customerId as string)
+        .order('issue_date', { ascending: false })) as any
+
+      if (error) throw error
+      return (data ?? []) as Array<
+        QuoteRow & {
+          quote_items?: QuoteItemRow[] | null
+        }
+      >
     },
   })
 }
@@ -331,14 +1141,31 @@ export function useCreateAccount() {
 }
 
 export function useTransactions() {
+  return useTransactionsByDateRange()
+}
+
+export function useTransactionsByDateRange(params?: { from?: string; to?: string }) {
+  const fromKey = params?.from ?? 'all'
+  const toKey = params?.to ?? 'all'
+
   return useQuery<TransactionRow[]>({
-    queryKey: ['transactions'],
+    queryKey: ['transactions', fromKey, toKey],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('transactions')
         .select('*')
         .order('transaction_date', { ascending: false })
-      
+
+      if (params?.from) {
+        q = q.gte('transaction_date', params.from)
+      }
+
+      if (params?.to) {
+        q = q.lte('transaction_date', params.to)
+      }
+
+      const { data, error } = await q
+
       if (error) throw error
       return data ?? []
     },
@@ -346,16 +1173,45 @@ export function useTransactions() {
 }
 
 export function useInvoices() {
-  return useQuery<InvoiceRow[]>({
-    queryKey: ['invoices'],
+  return useInvoicesByDateRange()
+}
+
+export function useInvoicesByDateRange(params?: { from?: string; to?: string }) {
+  const fromKey = params?.from ?? 'all'
+  const toKey = params?.to ?? 'all'
+
+  return useQuery<
+    Array<
+      InvoiceRow & {
+        customer?: CustomerRow | null
+        invoice_items?: InvoiceItemRow[] | null
+      }
+    >
+  >({
+    queryKey: ['invoices', fromKey, toKey],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('invoices')
-        .select('*')
+        .select('*, customer:customers(*), invoice_items(*)')
         .order('invoice_date', { ascending: false })
-      
+
+      if (params?.from) {
+        q = q.gte('invoice_date', params.from)
+      }
+
+      if (params?.to) {
+        q = q.lte('invoice_date', params.to)
+      }
+
+      const { data, error } = (await q) as any
+
       if (error) throw error
-      return data ?? []
+      return (data ?? []) as Array<
+        InvoiceRow & {
+          customer?: CustomerRow | null
+          invoice_items?: InvoiceItemRow[] | null
+        }
+      >
     },
   })
 }
@@ -372,10 +1228,16 @@ export function useCreateCustomer() {
         .single()
       
       if (error) throw error
+
+      const name = (data as any)?.name as string | undefined
+      if (name) {
+        await logActivity(`"${name}" isminde yeni müşteri eklendi.`)
+      }
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
     },
   })
 }
@@ -392,10 +1254,30 @@ export function useCreateTransaction() {
         .single()
       
       if (error) throw error
+
+      let accountName: string | undefined
+      if (transaction.bank_account) {
+        const { data: account } = await supabase
+          .from('accounts')
+          .select('name')
+          .eq('id', transaction.bank_account)
+          .single()
+
+        accountName = (account as any)?.name as string | undefined
+      }
+      const amount = Number(transaction.amount ?? 0)
+      const category = transaction.category
+      const txType = transaction.type
+      const verb = txType === 'income' ? 'hesabına' : 'hesabından'
+      const kindLabel = txType === 'income' ? 'gelir' : 'gider'
+      await logActivity(
+        `"${accountName ?? 'Hesap'}" ${verb} ${amount.toLocaleString('tr-TR')} TL ${category} ${kindLabel} işlemi eklendi.`
+      )
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
     },
   })
 }

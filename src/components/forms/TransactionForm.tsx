@@ -5,8 +5,12 @@ import { Controller, useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 
 import { useAuth } from '../../contexts/AuthContext'
-import { useCreateTransaction, useCustomers, useUpdateTransaction } from '../../hooks/useSupabaseQuery'
-import { TRANSACTION_CATEGORIES } from '../../lib/constants'
+import {
+  useCategories,
+  useCreateTransaction,
+  useCustomers,
+  useUpdateTransaction,
+} from '../../hooks/useSupabaseQuery'
 import { AccountSelector } from '../shared/AccountSelector'
 import { UnifiedDatePicker } from '../shared/UnifiedDatePicker'
 import { Button } from '../ui/button'
@@ -63,11 +67,7 @@ export function TransactionForm({ initialTransaction, onSuccess }: TransactionFo
         amount: Number(initialTransaction?.amount ?? 0),
         date,
         accountId: initialTransaction?.bank_account ?? '',
-        category:
-          initialTransaction?.category ??
-          (initialType === 'income'
-            ? (TRANSACTION_CATEGORIES.INCOME[0] ?? 'Satış Geliri')
-            : (TRANSACTION_CATEGORIES.EXPENSE[0] ?? 'Maaş')),
+        category: initialTransaction?.category ?? '',
         customerId: initialTransaction?.customer_id ?? undefined,
         description: initialTransaction?.description ?? '',
       }
@@ -94,7 +94,19 @@ export function TransactionForm({ initialTransaction, onSuccess }: TransactionFo
   }, [defaultValues, reset])
 
   const type = watch('type')
-  const categories = type === 'income' ? TRANSACTION_CATEGORIES.INCOME : TRANSACTION_CATEGORIES.EXPENSE
+  const selectedCategory = watch('category')
+  const categoriesQuery = useCategories(type)
+  const categories = useMemo(() => {
+    return (categoriesQuery.data ?? []).map((c) => c.name)
+  }, [categoriesQuery.data])
+
+  useEffect(() => {
+    if (isEditing) return
+    if (selectedCategory && categories.includes(selectedCategory)) return
+    if (categories.length > 0) {
+      setValue('category', categories[0] ?? '')
+    }
+  }, [categories, isEditing, selectedCategory, setValue])
 
   const onSubmit = async (values: TransactionFormValues) => {
     if (!user) return
@@ -139,7 +151,9 @@ export function TransactionForm({ initialTransaction, onSuccess }: TransactionFo
           onClick={() => {
             setKind('income')
             setValue('type', 'income')
-            setValue('category', TRANSACTION_CATEGORIES.INCOME[0] ?? 'Satış Geliri')
+            if (type !== 'income') {
+              setValue('category', '')
+            }
           }}
         >
           Gelir
@@ -151,7 +165,9 @@ export function TransactionForm({ initialTransaction, onSuccess }: TransactionFo
           onClick={() => {
             setKind('expense')
             setValue('type', 'expense')
-            setValue('category', TRANSACTION_CATEGORIES.EXPENSE[0] ?? 'Maaş')
+            if (type !== 'expense') {
+              setValue('category', '')
+            }
           }}
         >
           Gider
@@ -208,16 +224,22 @@ export function TransactionForm({ initialTransaction, onSuccess }: TransactionFo
             control={control}
             name="category"
             render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select value={field.value || undefined} onValueChange={field.onChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Kategori seç" />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  {categories.length === 0 ? (
+                    <SelectItem value="__none__" disabled>
+                      Ayarlar'dan kategori ekleyin
                     </SelectItem>
-                  ))}
+                  ) : (
+                    categories.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             )}
