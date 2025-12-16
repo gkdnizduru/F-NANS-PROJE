@@ -16,6 +16,9 @@ import { DealsPage } from './pages/DealsPage'
 import { QuotesPage } from './pages/QuotesPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { Activities } from './pages/Activities'
+import { ForgotPassword } from './pages/ForgotPassword'
+import { UpdatePassword } from './pages/UpdatePassword'
+import { PublicQuote } from './pages/public/PublicQuote'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,6 +37,9 @@ function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/update-password" element={<UpdatePassword />} />
+            <Route path="/p/quote/:token" element={<PublicQuote />} />
             <Route
               path="/"
               element={

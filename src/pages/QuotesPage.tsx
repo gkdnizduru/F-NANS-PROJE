@@ -22,6 +22,7 @@ import { useCustomers, useDeleteQuote, useQuotesByDateRange, useConvertQuoteToIn
 import { formatCurrency, formatShortDate } from '../lib/format'
 import { cn } from '../lib/utils'
 import type { Database } from '../types/database'
+import { supabase } from '../lib/supabase'
 import {
   endOfMonth,
   endOfWeek,
@@ -33,8 +34,10 @@ import {
   subMonths,
 } from 'date-fns'
 import { tr } from 'date-fns/locale'
-import { ArrowRightLeft, Calendar as CalendarIcon, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, Calendar as CalendarIcon, Copy, ExternalLink, Pencil, Plus, Search, Share2, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 
 type QuoteRow = Database['public']['Tables']['quotes']['Row']
 
@@ -76,6 +79,7 @@ const quoteBadgeVariants: Record<QuoteRow['status'], { variant: 'default' | 'sec
 
 export function QuotesPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const now = new Date()
 
   const [open, setOpen] = useState(false)
@@ -266,6 +270,79 @@ export function QuotesPage() {
                     <SheetTitle>{editingQuote ? 'Teklifi Düzenle' : 'Teklif Oluştur'}</SheetTitle>
                   </SheetHeader>
                   <div className="px-6 pb-6">
+                    {editingQuote ? (
+                      <div className="mb-6 rounded-lg border p-4">
+                        <div className="text-sm font-medium">Müşteri Linki</div>
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                          <Input
+                            readOnly
+                            value={
+                              editingQuote.token
+                                ? `${window.location.origin}/p/quote/${editingQuote.token}`
+                                : 'Bu teklif için henüz link oluşturulmadı.'
+                            }
+                          />
+                          {editingQuote.token ? (
+                            <>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(
+                                      `${window.location.origin}/p/quote/${editingQuote.token}`
+                                    )
+                                    toast({ title: 'Link kopyalandı' })
+                                  } catch (e: any) {
+                                    toast({
+                                      title: 'Kopyalama başarısız',
+                                      description: e?.message || 'Bilinmeyen hata',
+                                      variant: 'destructive',
+                                    })
+                                  }
+                                }}
+                              >
+                                Kopyala
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => window.open(`/p/quote/${editingQuote.token}`, '_blank', 'noopener,noreferrer')}
+                              >
+                                Önizle
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={async () => {
+                                try {
+                                  const newToken = crypto.randomUUID()
+                                  const { error } = await supabase
+                                    .from('quotes')
+                                    .update({ token: newToken })
+                                    .eq('id', editingQuote.id)
+                                  if (error) throw error
+
+                                  setEditingQuote({ ...editingQuote, token: newToken })
+                                  queryClient.invalidateQueries({ queryKey: ['quotes'] })
+                                  toast({ title: 'Link oluşturuldu' })
+                                } catch (e: any) {
+                                  toast({
+                                    title: 'Link oluşturulamadı',
+                                    description: e?.message || 'Bilinmeyen hata',
+                                    variant: 'destructive',
+                                  })
+                                }
+                              }}
+                            >
+                              Link Oluştur
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
                     <CreateQuoteForm
                       initialQuote={editingQuote ?? undefined}
                       onSuccess={() => {
@@ -330,21 +407,75 @@ export function QuotesPage() {
                             <td className="p-4 text-right tabular-nums">{formatCurrency(Number(q.total_amount ?? 0))}</td>
                             <td className="p-4 text-right">
                               <div className="flex justify-end gap-2">
+                                <DropdownMenu.Root>
+                                  <DropdownMenu.Trigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      title={q.token ? 'Paylaş' : 'Paylaşmak için link oluşturun'}
+                                      disabled={!q.token}
+                                    >
+                                      <Share2 className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenu.Trigger>
+                                  <DropdownMenu.Portal>
+                                    <DropdownMenu.Content
+                                      align="end"
+                                      sideOffset={6}
+                                      className="z-50 min-w-[200px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                                    >
+                                      <DropdownMenu.Item
+                                        className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+                                        onSelect={async () => {
+                                          try {
+                                            if (!q.token) return
+                                            const fullUrl = `${window.location.origin}/p/quote/${q.token}`
+                                            await navigator.clipboard.writeText(fullUrl)
+                                            toast({ title: 'Link kopyalandı' })
+                                          } catch (e: any) {
+                                            toast({
+                                              title: 'Kopyalama başarısız',
+                                              description: e?.message || 'Bilinmeyen hata',
+                                              variant: 'destructive',
+                                            })
+                                          }
+                                        }}
+                                      >
+                                        <Copy className="h-4 w-4" />
+                                        Bağlantıyı Kopyala
+                                      </DropdownMenu.Item>
+
+                                      <DropdownMenu.Item
+                                        className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+                                        onSelect={() => {
+                                          if (!q.token) return
+                                          const fullUrl = `${window.location.origin}/p/quote/${q.token}`
+                                          window.open(fullUrl, '_blank', 'noopener,noreferrer')
+                                        }}
+                                      >
+                                        <ExternalLink className="h-4 w-4" />
+                                        Önizle
+                                      </DropdownMenu.Item>
+                                    </DropdownMenu.Content>
+                                  </DropdownMenu.Portal>
+                                </DropdownMenu.Root>
+
                                 <Button
                                   variant="outline"
-                                  size="sm"
+                                  size="icon"
+                                  title="Düzenle"
                                   onClick={() => {
                                     setEditingQuote(q)
                                     setOpen(true)
                                   }}
                                 >
-                                  <Pencil className="mr-2 h-4 w-4" />
-                                  Düzenle
+                                  <Pencil className="h-4 w-4" />
                                 </Button>
 
                                 <Button
                                   variant="outline"
-                                  size="sm"
+                                  size="icon"
+                                  title="Faturaya Dönüştür"
                                   disabled={q.status === 'converted' || convertToInvoice.isPending}
                                   onClick={async () => {
                                     try {
@@ -360,17 +491,17 @@ export function QuotesPage() {
                                     }
                                   }}
                                 >
-                                  <ArrowRightLeft className="mr-2 h-4 w-4" />
-                                  Faturaya Dönüştür
+                                  <ArrowRightLeft className="h-4 w-4" />
                                 </Button>
 
                                 <Button
-                                  variant="destructive"
-                                  size="sm"
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Sil"
+                                  className="text-destructive hover:text-destructive"
                                   onClick={() => setDeletingQuote(q)}
                                 >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Sil
+                                  <Trash2 className="h-4 w-4" />
                                 </Button>
                               </div>
                             </td>

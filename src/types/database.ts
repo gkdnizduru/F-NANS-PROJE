@@ -353,6 +353,7 @@ export interface Database {
           quote_number: string
           issue_date: string
           expiry_date: string
+          token: string | null
           status: 'draft' | 'sent' | 'accepted' | 'rejected' | 'converted'
           subtotal: number
           tax_rate: number
@@ -368,6 +369,7 @@ export interface Database {
           quote_number: string
           issue_date: string
           expiry_date: string
+          token?: string | null
           status?: 'draft' | 'sent' | 'accepted' | 'rejected' | 'converted'
           subtotal: number
           tax_rate: number
@@ -383,6 +385,7 @@ export interface Database {
           quote_number?: string
           issue_date?: string
           expiry_date?: string
+          token?: string | null
           status?: 'draft' | 'sent' | 'accepted' | 'rejected' | 'converted'
           subtotal?: number
           tax_rate?: number
@@ -566,7 +569,19 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      public_quote_get: {
+        Args: {
+          p_token: string
+        }
+        Returns: Json
+      }
+      public_quote_set_status: {
+        Args: {
+          p_token: string
+          p_status: string
+        }
+        Returns: null
+      }
     }
     Enums: {
       [_ in never]: never
