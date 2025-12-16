@@ -1,17 +1,18 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useFieldArray, useForm } from 'react-hook-form'
 import { format } from 'date-fns'
-import { Trash2, Plus } from 'lucide-react'
+import { Trash2, Plus, Check, ChevronsUpDown } from 'lucide-react'
 
 import { useAuth } from '../../contexts/AuthContext'
-import { useCreateInvoice, useCustomers, useUpdateInvoice } from '../../hooks/useSupabaseQuery'
+import { useCreateInvoice, useCustomers, useUpdateInvoice, useProducts } from '../../hooks/useSupabaseQuery'
 import type { Database } from '../../types/database'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Textarea } from '../ui/textarea'
+import { Switch } from '../ui/switch'
 import {
   Select,
   SelectContent,
@@ -19,12 +20,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../ui/select'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '../ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../ui/command'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../ui/table'
 import { UnifiedDatePicker } from '../shared/UnifiedDatePicker'
+import { cn } from '../../lib/utils'
 
 const invoiceItemSchema = z.object({
+  productId: z.string().optional(),
   description: z.string().min(1, 'Ürün/Hizmet zorunludur'),
-  quantity: z.number().positive('Adet 0’dan büyük olmalı'),
+  quantity: z.number().positive('Adet 0dan büyük olmalı'),
   unitPrice: z.number().nonnegative('Fiyat 0 veya büyük olmalı'),
+  taxRate: z.number().min(0).max(100, 'KDV oranı 0-100 arası olmalı'),
 })
 
 const invoiceSchema = z.object({
@@ -32,7 +57,7 @@ const invoiceSchema = z.object({
   invoiceDate: z.date(),
   dueDate: z.date(),
   invoiceNumber: z.string().min(1, 'Fatura no zorunludur'),
-  taxRate: z.number().nonnegative(),
+  taxInclusive: z.boolean(),
   notes: z.string().optional(),
   items: z.array(invoiceItemSchema).min(1, 'En az 1 kalem ekleyin'),
 })
@@ -43,7 +68,7 @@ type InvoicePrefill = {
   customerId?: string
   taxRate?: number
   notes?: string
-  items?: Array<{ description: string; quantity: number; unitPrice: number }>
+  items?: Array<{ description: string; quantity: number; unitPrice: number; taxRate?: number }>
 }
 
 type CreateInvoiceFormProps = {
@@ -61,51 +86,54 @@ function createDefaultInvoiceNumber() {
 export function CreateInvoiceForm({ initialInvoice, initialItems, prefill, onSuccess }: CreateInvoiceFormProps) {
   const { user } = useAuth()
   const customersQuery = useCustomers()
+  const productsQuery = useProducts()
   const createInvoice = useCreateInvoice()
   const updateInvoice = useUpdateInvoice()
 
+  const [openProductPicker, setOpenProductPicker] = useState<number | null>(null)
+
   const isEditing = Boolean(initialInvoice?.id)
+  const products = productsQuery.data ?? []
 
   const defaultValues = useMemo<CreateInvoiceValues>(() => {
     if (isEditing && initialInvoice) {
-      const inferredTaxRate =
-        initialItems && initialItems.length > 0
-          ? Number(initialItems[0]?.tax_rate ?? 0)
-          : 0
-
       return {
         customerId: initialInvoice.customer_id,
         invoiceDate: new Date(initialInvoice.invoice_date),
         dueDate: new Date(initialInvoice.due_date),
         invoiceNumber: initialInvoice.invoice_number,
-        taxRate: Number.isFinite(inferredTaxRate) ? inferredTaxRate : 0,
+        taxInclusive: false,
         notes: initialInvoice.notes ?? '',
         items:
           (initialItems ?? []).length > 0
             ? (initialItems ?? []).map((it) => ({
+                productId: undefined,
                 description: it.description,
                 quantity: Number(it.quantity),
                 unitPrice: Number(it.unit_price),
+                taxRate: Number(it.tax_rate ?? 20),
               }))
-            : [{ description: '', quantity: 1, unitPrice: 0 }],
+            : [{ productId: undefined, description: '', quantity: 1, unitPrice: 0, taxRate: 20 }],
       }
     }
 
     if (!isEditing && prefill) {
       const prefillItems = (prefill.items ?? []).length
         ? (prefill.items ?? []).map((it) => ({
+            productId: undefined,
             description: it.description,
             quantity: Number(it.quantity ?? 1),
             unitPrice: Number(it.unitPrice ?? 0),
+            taxRate: Number(it.taxRate ?? 20),
           }))
-        : [{ description: '', quantity: 1, unitPrice: 0 }]
+        : [{ productId: undefined, description: '', quantity: 1, unitPrice: 0, taxRate: 20 }]
 
       return {
         customerId: prefill.customerId ?? '',
         invoiceDate: new Date(),
         dueDate: new Date(),
         invoiceNumber: createDefaultInvoiceNumber(),
-        taxRate: Number(prefill.taxRate ?? 20),
+        taxInclusive: false,
         notes: prefill.notes ?? '',
         items: prefillItems,
       }
@@ -116,9 +144,9 @@ export function CreateInvoiceForm({ initialInvoice, initialItems, prefill, onSuc
       invoiceDate: new Date(),
       dueDate: new Date(),
       invoiceNumber: createDefaultInvoiceNumber(),
-      taxRate: 20,
+      taxInclusive: false,
       notes: '',
-      items: [{ description: '', quantity: 1, unitPrice: 0 }],
+      items: [{ productId: undefined, description: '', quantity: 1, unitPrice: 0, taxRate: 20 }],
     }
   }, [initialInvoice, initialItems, isEditing, prefill])
 
@@ -144,32 +172,62 @@ export function CreateInvoiceForm({ initialInvoice, initialItems, prefill, onSuc
   })
 
   const items = watch('items')
-  const taxRate = watch('taxRate')
+  const taxInclusive = watch('taxInclusive')
 
-  const subtotal = (items ?? []).reduce(
-    (acc, it) => acc + Number(it.quantity || 0) * Number(it.unitPrice || 0),
-    0
+  const calculateLineTotals = (item: typeof items[0]) => {
+    const qty = Number(item?.quantity || 0)
+    const price = Number(item?.unitPrice || 0)
+    const rate = Number(item?.taxRate || 0)
+    const lineTotal = qty * price
+
+    if (taxInclusive) {
+      const taxAmount = lineTotal - lineTotal / (1 + rate / 100)
+      const subtotalAmount = lineTotal - taxAmount
+      return { lineTotal, taxAmount, subtotalAmount }
+    } else {
+      const taxAmount = lineTotal * (rate / 100)
+      const subtotalAmount = lineTotal
+      return { lineTotal: lineTotal + taxAmount, taxAmount, subtotalAmount }
+    }
+  }
+
+  const totals = (items ?? []).reduce(
+    (acc, it) => {
+      const { lineTotal, taxAmount, subtotalAmount } = calculateLineTotals(it)
+      return {
+        subtotal: acc.subtotal + subtotalAmount,
+        tax: acc.tax + taxAmount,
+        total: acc.total + lineTotal,
+      }
+    },
+    { subtotal: 0, tax: 0, total: 0 }
   )
-  const taxAmount = subtotal * (Number(taxRate || 0) / 100)
-  const totalAmount = subtotal + taxAmount
 
   const onSubmit = async (values: CreateInvoiceValues) => {
     if (!user) return
 
-    const nextSubtotal = (values.items ?? []).reduce(
-      (acc, it) => acc + Number(it.quantity || 0) * Number(it.unitPrice || 0),
-      0
+    const finalTotals = (values.items ?? []).reduce(
+      (acc, it) => {
+        const { lineTotal, taxAmount, subtotalAmount } = calculateLineTotals(it)
+        return {
+          subtotal: acc.subtotal + subtotalAmount,
+          tax: acc.tax + taxAmount,
+          total: acc.total + lineTotal,
+        }
+      },
+      { subtotal: 0, tax: 0, total: 0 }
     )
-    const nextTaxAmount = nextSubtotal * (Number(values.taxRate || 0) / 100)
-    const nextTotalAmount = nextSubtotal + nextTaxAmount
 
-    const mappedItems = values.items.map((it) => ({
-      description: it.description,
-      quantity: it.quantity,
-      unit_price: it.unitPrice,
-      tax_rate: Number(values.taxRate || 0),
-      amount: Number(it.quantity) * Number(it.unitPrice),
-    }))
+    const mappedItems = values.items.map((it) => {
+      const { subtotalAmount } = calculateLineTotals(it)
+      return {
+        description: it.description,
+        quantity: it.quantity,
+        unit_price: it.unitPrice,
+        tax_rate: Number(it.taxRate || 0),
+        amount: subtotalAmount,
+      }
+    })
 
     if (isEditing && initialInvoice?.id) {
       await updateInvoice.mutateAsync({
@@ -180,9 +238,9 @@ export function CreateInvoiceForm({ initialInvoice, initialItems, prefill, onSuc
           invoice_date: format(values.invoiceDate, 'yyyy-MM-dd'),
           due_date: format(values.dueDate, 'yyyy-MM-dd'),
           status: initialInvoice.status,
-          subtotal: nextSubtotal,
-          tax_amount: nextTaxAmount,
-          total_amount: nextTotalAmount,
+          subtotal: finalTotals.subtotal,
+          tax_amount: finalTotals.tax,
+          total_amount: finalTotals.total,
           notes: values.notes?.trim() || null,
         },
         items: mappedItems,
@@ -200,9 +258,9 @@ export function CreateInvoiceForm({ initialInvoice, initialItems, prefill, onSuc
         invoice_date: format(values.invoiceDate, 'yyyy-MM-dd'),
         due_date: format(values.dueDate, 'yyyy-MM-dd'),
         status: 'draft',
-        subtotal: nextSubtotal,
-        tax_amount: nextTaxAmount,
-        total_amount: nextTotalAmount,
+        subtotal: finalTotals.subtotal,
+        tax_amount: finalTotals.tax,
+        total_amount: finalTotals.total,
         notes: values.notes?.trim() || null,
       },
       items: mappedItems,
@@ -275,78 +333,186 @@ export function CreateInvoiceForm({ initialInvoice, initialItems, prefill, onSuc
         </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold">Kalemler</h3>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => append({ description: '', quantity: 1, unitPrice: 0 })}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Kalem Ekle
-          </Button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Controller
+                control={control}
+                name="taxInclusive"
+                render={({ field }) => (
+                  <Switch
+                    id="taxInclusive"
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                )}
+              />
+              <Label htmlFor="taxInclusive" className="text-sm font-normal cursor-pointer">
+                Fiyatlara KDV Dahildir
+              </Label>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => append({ productId: undefined, description: '', quantity: 1, unitPrice: 0, taxRate: 20 })}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Kalem Ekle
+            </Button>
+          </div>
         </div>
 
-        <div className="space-y-3">
-          {fields.map((field, index) => {
-            const row = items?.[index]
-            const rowTotal = Number(row?.quantity || 0) * Number(row?.unitPrice || 0)
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[35%]">Ürün/Hizmet</TableHead>
+                <TableHead className="w-[12%] text-right">Adet</TableHead>
+                <TableHead className="w-[18%] text-right">Birim Fiyat</TableHead>
+                <TableHead className="w-[12%] text-right">KDV %</TableHead>
+                <TableHead className="w-[18%] text-right">Tutar</TableHead>
+                <TableHead className="w-[5%]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {fields.map((field, index) => {
+                const row = items?.[index]
+                const { lineTotal } = calculateLineTotals(row)
 
-            return (
-              <div key={field.id} className="rounded-lg border p-4">
-                <div className="grid gap-4 md:grid-cols-12">
-                  <div className="md:col-span-5 space-y-2">
-                    <Label>Ürün/Hizmet</Label>
-                    <Input
-                      placeholder="Açıklama"
-                      {...register(`items.${index}.description` as const)}
-                    />
-                    {errors.items?.[index]?.description && (
-                      <p className="text-sm text-destructive">
-                        {errors.items[index]?.description?.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="md:col-span-2 space-y-2">
-                    <Label>Adet</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      {...register(`items.${index}.quantity` as const, { valueAsNumber: true })}
-                    />
-                  </div>
-
-                  <div className="md:col-span-3 space-y-2">
-                    <Label>Birim Fiyat</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      {...register(`items.${index}.unitPrice` as const, { valueAsNumber: true })}
-                    />
-                  </div>
-
-                  <div className="md:col-span-2 flex items-end justify-between gap-2">
-                    <div className="text-right">
-                      <div className="text-xs text-muted-foreground">Toplam</div>
-                      <div className="font-semibold">₺{rowTotal.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</div>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => remove(index)}
-                      disabled={fields.length === 1}
-                      title="Kaldır"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+                return (
+                  <TableRow key={field.id}>
+                    <TableCell>
+                      <Popover
+                        open={openProductPicker === index}
+                        onOpenChange={(open) => setOpenProductPicker(open ? index : null)}
+                      >
+                        <PopoverTrigger asChild>
+                          <div className="relative">
+                            <Input
+                              placeholder="Ürün seç veya yaz..."
+                              {...register(`items.${index}.description` as const)}
+                              onClick={() => setOpenProductPicker(index)}
+                              className="pr-8"
+                            />
+                            <ChevronsUpDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
+                          </div>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[400px] p-2 z-[9999]" align="start">
+                          <Command>
+                            <CommandInput placeholder="Ürün ara..." />
+                            <CommandList className="max-h-[250px]">
+                              {products.length === 0 ? (
+                                <CommandEmpty>Ürün bulunamadı</CommandEmpty>
+                              ) : null}
+                              <CommandGroup>
+                                {products.map((product) => (
+                                  <CommandItem
+                                    key={product.id}
+                                    value={product.name}
+                                    selected={row?.productId === product.id}
+                                    onClick={() => {
+                                      const currentItems = control._formValues.items
+                                      currentItems[index] = {
+                                        ...currentItems[index],
+                                        productId: product.id,
+                                        description: product.name,
+                                        unitPrice: Number(product.unit_price),
+                                      }
+                                      reset({ ...control._formValues, items: currentItems })
+                                      setOpenProductPicker(null)
+                                    }}
+                                    className="flex justify-between items-center"
+                                  >
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <Check
+                                        className={cn(
+                                          'h-4 w-4 shrink-0',
+                                          row?.productId === product.id ? 'opacity-100' : 'opacity-0'
+                                        )}
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="font-medium truncate">{product.name}</div>
+                                        {product.description && (
+                                          <div className="text-xs text-muted-foreground truncate">{product.description}</div>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <span className="text-sm font-mono text-muted-foreground ml-3 shrink-0">
+                                      ₺{Number(product.unit_price).toFixed(2)}
+                                    </span>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      {errors.items?.[index]?.description && (
+                        <p className="text-xs text-destructive mt-1">
+                          {errors.items[index]?.description?.message}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="text-right font-mono [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        {...register(`items.${index}.quantity` as const, { valueAsNumber: true })}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="text-right font-mono [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        {...register(`items.${index}.unitPrice` as const, { valueAsNumber: true })}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Controller
+                        control={control}
+                        name={`items.${index}.taxRate` as const}
+                        render={({ field }) => (
+                          <Select value={String(field.value)} onValueChange={(v) => field.onChange(Number(v))}>
+                            <SelectTrigger className="text-right font-mono">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0">0%</SelectItem>
+                              <SelectItem value="1">1%</SelectItem>
+                              <SelectItem value="10">10%</SelectItem>
+                              <SelectItem value="20">20%</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-medium">
+                      ₺{lineTotal.toFixed(2)}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => remove(index)}
+                        disabled={fields.length === 1}
+                        title="Kaldır"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         </div>
 
         {typeof errors.items?.message === 'string' ? (
@@ -355,34 +521,25 @@ export function CreateInvoiceForm({ initialInvoice, initialItems, prefill, onSuc
       </div>
 
       <div className="rounded-lg border p-4 space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="taxRate">KDV (%)</Label>
-            <Input
-              id="taxRate"
-              type="number"
-              step="0.01"
-              {...register('taxRate', { valueAsNumber: true })}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notlar</Label>
-            <Textarea id="notes" placeholder="Opsiyonel" {...register('notes')} />
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="notes">Notlar</Label>
+          <Textarea id="notes" placeholder="Opsiyonel" rows={2} {...register('notes')} />
         </div>
 
-        <div className="grid gap-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Ara Toplam</span>
-            <span className="font-medium">₺{subtotal.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">KDV</span>
-            <span className="font-medium">₺{taxAmount.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="font-semibold">Genel Toplam</span>
-            <span className="text-lg font-bold">₺{totalAmount.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</span>
+        <div className="border-t pt-4">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Ara Toplam (Matrah)</span>
+              <span className="font-mono font-medium">₺{totals.subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Toplam KDV</span>
+              <span className="font-mono font-medium">₺{totals.tax.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t">
+              <span className="font-semibold">Genel Toplam</span>
+              <span className="text-lg font-bold font-mono">₺{totals.total.toFixed(2)}</span>
+            </div>
           </div>
         </div>
       </div>

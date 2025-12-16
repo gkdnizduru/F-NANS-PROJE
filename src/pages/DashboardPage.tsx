@@ -4,16 +4,31 @@ import { Button } from '../components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { Calendar } from '../components/ui/calendar'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '../components/ui/command'
-import { TrendingUp, TrendingDown, DollarSign, AlertCircle, Calendar as CalendarIcon, Check, ChevronsUpDown } from 'lucide-react'
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  AlertCircle,
+  Calendar as CalendarIcon,
+  Check,
+  ChevronsUpDown,
+  FileText,
+  Users,
+  Briefcase,
+} from 'lucide-react'
 import { AreaChart, Area, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
+  addDays,
   endOfMonth,
   endOfWeek,
   endOfYear,
+  differenceInCalendarDays,
   format,
+  parseISO,
   startOfMonth,
+  startOfDay,
   startOfWeek,
   startOfYear,
   subMonths,
@@ -21,9 +36,11 @@ import {
 import { tr } from 'date-fns/locale'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
-import { useAccounts } from '../hooks/useSupabaseQuery'
+import { useAccounts, useCustomers, useDeals } from '../hooks/useSupabaseQuery'
 import { formatCurrency, formatShortDate } from '../lib/format'
 import type { Database } from '../types/database'
+import { useNavigate } from 'react-router-dom'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 
 type DateRange = {
   from?: Date
@@ -32,8 +49,10 @@ type DateRange = {
 
 type TransactionRow = Database['public']['Tables']['transactions']['Row']
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
+type DealRow = Database['public']['Tables']['deals']['Row']
 
 export function DashboardPage() {
+  const navigate = useNavigate()
   const now = new Date()
 
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([])
@@ -45,7 +64,11 @@ export function DashboardPage() {
   }))
 
   const accountsQuery = useAccounts()
+  const customersQuery = useCustomers()
+  const dealsQuery = useDeals()
   const accounts = accountsQuery.data ?? []
+  const customers = customersQuery.data ?? []
+  const deals = dealsQuery.data ?? []
 
   const dateFromStr = useMemo(() => {
     return dateRange.from ? format(dateRange.from, 'yyyy-MM-dd') : undefined
@@ -113,9 +136,80 @@ export function DashboardPage() {
   const transactions = transactionsQuery.data ?? []
   const invoices = invoicesQuery.data ?? []
 
+  const actionInvoicesQuery = useQuery<InvoiceRow[]>({
+    queryKey: ['dashboard_action_invoices'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .neq('status', 'paid')
+        .order('due_date', { ascending: true })
+        .limit(25)
+
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
   const accountsById = useMemo(() => {
     return new Map(accounts.map((a) => [a.id, a]))
   }, [accounts])
+
+  const customersById = useMemo(() => {
+    return new Map(customers.map((c) => [c.id, c]))
+  }, [customers])
+
+  const stageLabels: Record<DealRow['stage'], string> = {
+    new: 'Yeni Fırsat',
+    meeting: 'Toplantı',
+    proposal: 'Teklif',
+    negotiation: 'Pazarlık',
+    won: 'Kazanıldı',
+    lost: 'Kaybedildi',
+  }
+
+  const activeStages: DealRow['stage'][] = ['new', 'meeting', 'proposal', 'negotiation']
+
+  const pipelineSummary = useMemo(() => {
+    const map = new Map<DealRow['stage'], { stage: DealRow['stage']; count: number; total: number }>()
+    for (const s of activeStages) {
+      map.set(s, { stage: s, count: 0, total: 0 })
+    }
+
+    for (const d of deals) {
+      if (!activeStages.includes(d.stage)) continue
+      const curr = map.get(d.stage) ?? { stage: d.stage, count: 0, total: 0 }
+      curr.count += 1
+      curr.total += Number(d.value ?? 0)
+      map.set(d.stage, curr)
+    }
+
+    const rows = activeStages.map((s) => map.get(s)!).filter(Boolean)
+    const pipelineTotal = rows.reduce((acc, r) => acc + r.total, 0)
+    const maxStageTotal = Math.max(1, ...rows.map((r) => r.total))
+    return { rows, pipelineTotal, maxStageTotal }
+  }, [deals])
+
+  const actionInvoices = actionInvoicesQuery.data ?? []
+  const { overdueInvoices, upcomingInvoices } = useMemo(() => {
+    const today = startOfDay(new Date())
+    const upcomingLimit = addDays(today, 7)
+
+    const overdue: InvoiceRow[] = []
+    const upcoming: InvoiceRow[] = []
+
+    for (const inv of actionInvoices) {
+      if (inv.status === 'paid') continue
+      const due = parseISO(inv.due_date)
+      if (due < today) overdue.push(inv)
+      else if (due <= upcomingLimit) upcoming.push(inv)
+    }
+
+    return {
+      overdueInvoices: overdue.slice(0, 8),
+      upcomingInvoices: upcoming.slice(0, 8),
+    }
+  }, [actionInvoices])
 
   const filteredAccounts = useMemo(() => {
     const q = accountFilterQuery.trim().toLowerCase()
@@ -299,6 +393,42 @@ export function DashboardPage() {
           </div>
         </PopoverContent>
       </Popover>
+
+      <div className="flex items-center gap-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          title="Fatura Kes"
+          aria-label="Fatura Kes"
+          onClick={() => navigate('/invoices/new')}
+          className="h-9 w-9"
+        >
+          <FileText className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          title="Müşteri Ekle"
+          aria-label="Müşteri Ekle"
+          onClick={() => navigate('/musteriler', { state: { openNew: true } })}
+          className="h-9 w-9"
+        >
+          <Users className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          title="Fırsat Ekle"
+          aria-label="Fırsat Ekle"
+          onClick={() => navigate('/firsatlar', { state: { openNew: true } })}
+          className="h-9 w-9"
+        >
+          <Briefcase className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   )
 
@@ -486,7 +616,65 @@ export function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Expense Categories Pie Chart */}
+          {/* Sales Pipeline Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Satış Hunisi</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {dealsQuery.isLoading ? (
+                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  <p className="text-sm">Yükleniyor...</p>
+                </div>
+              ) : pipelineSummary.rows.every((r) => r.count === 0) ? (
+                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  <p className="text-sm">Aktif fırsat bulunamadı</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-md border bg-muted/30 p-3">
+                    <div className="text-xs text-muted-foreground">Toplam Pipeline</div>
+                    <div className="mt-1 text-lg font-semibold tabular-nums">
+                      {formatCurrency(pipelineSummary.pipelineTotal)}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {pipelineSummary.rows.map((r) => {
+                      const barPct = Math.round((r.total / pipelineSummary.maxStageTotal) * 100)
+                      return (
+                        <div key={r.stage} className="space-y-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium truncate">
+                                {stageLabels[r.stage]}
+                                <span className="text-xs text-muted-foreground"> • {r.count} fırsat</span>
+                              </div>
+                              <div className="text-xs text-muted-foreground tabular-nums">
+                                {formatCurrency(r.total)}
+                              </div>
+                            </div>
+                            <div className="w-24 shrink-0">
+                              <div className="h-2 w-full rounded-full bg-muted">
+                                <div
+                                  className="h-2 rounded-full bg-primary/70"
+                                  style={{ width: `${Math.max(4, barPct)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Bottom Row */}
+        <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle>Gider Kategorileri</CardTitle>
@@ -533,47 +721,125 @@ export function DashboardPage() {
               )}
             </CardContent>
           </Card>
-        </div>
 
-        {/* Recent Transactions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Son İşlemler</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentTransactions.length === 0 ? (
-              <div className="flex items-center justify-center py-8 text-muted-foreground">
-                <p className="text-sm">Henüz işlem bulunamadı</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {recentTransactions.map((t) => {
-                  const accountName = t.bank_account ? accountsById.get(t.bank_account)?.name : undefined
-                  const amount = Number(t.amount ?? 0)
-                  const isIncome = t.type === 'income'
-
-                  return (
-                    <div
-                      key={t.id}
-                      className="flex items-center justify-between border-b border-border pb-4 last:border-0 last:pb-0"
-                    >
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">
-                          {t.category}
-                          {accountName ? ` • ${accountName}` : ''}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{formatShortDate(t.transaction_date)}</p>
-                      </div>
-                      <div className={cn('text-sm font-semibold tabular-nums', isIncome ? 'text-green-600' : 'text-red-600')}>
-                        {isIncome ? '+' : '-'} {formatCurrency(amount)}
-                      </div>
+          <Tabs defaultValue="transactions">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle className="whitespace-nowrap">Hareketler</CardTitle>
+                <TabsList className="h-9">
+                  <TabsTrigger value="transactions" className="h-8">
+                    Son İşlemler
+                  </TabsTrigger>
+                  <TabsTrigger value="actions" className="h-8">
+                    Tahsilat Alarmı
+                  </TabsTrigger>
+                </TabsList>
+              </CardHeader>
+              <CardContent>
+                <TabsContent value="transactions" className="mt-0">
+                  {recentTransactions.length === 0 ? (
+                    <div className="flex items-center justify-center py-8 text-muted-foreground">
+                      <p className="text-sm">Henüz işlem bulunamadı</p>
                     </div>
-                  )
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  ) : (
+                    <div className="space-y-4">
+                      {recentTransactions.map((t) => {
+                        const accountName = t.bank_account ? accountsById.get(t.bank_account)?.name : undefined
+                        const amount = Number(t.amount ?? 0)
+                        const isIncome = t.type === 'income'
+
+                        return (
+                          <div
+                            key={t.id}
+                            className="flex items-center justify-between border-b border-border pb-4 last:border-0 last:pb-0"
+                          >
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium">
+                                {t.category}
+                                {accountName ? ` • ${accountName}` : ''}
+                              </p>
+                              <p className="text-xs text-muted-foreground">{formatShortDate(t.transaction_date)}</p>
+                            </div>
+                            <div
+                              className={cn(
+                                'text-sm font-semibold tabular-nums',
+                                isIncome ? 'text-green-600' : 'text-red-600'
+                              )}
+                            >
+                              {isIncome ? '+' : '-'} {formatCurrency(amount)}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="actions" className="mt-0">
+                  {actionInvoicesQuery.isLoading ? (
+                    <div className="flex items-center justify-center py-8 text-muted-foreground">
+                      <p className="text-sm">Yükleniyor...</p>
+                    </div>
+                  ) : overdueInvoices.length === 0 && upcomingInvoices.length === 0 ? (
+                    <div className="flex items-center justify-center py-8 text-muted-foreground">
+                      <p className="text-sm">Kritik tahsilat bulunamadı</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      {overdueInvoices.length > 0 ? (
+                        <div className="space-y-3">
+                          <div className="text-xs font-medium text-red-600">Gecikmiş</div>
+                          {overdueInvoices.map((inv) => {
+                            const customerName = customersById.get(inv.customer_id)?.name ?? 'Müşteri'
+                            const due = parseISO(inv.due_date)
+                            const days = Math.max(1, differenceInCalendarDays(startOfDay(new Date()), due))
+                            return (
+                              <div key={inv.id} className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium truncate">{customerName}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Vade: {formatShortDate(inv.due_date)} • {days} gün gecikti
+                                  </div>
+                                </div>
+                                <div className="text-sm font-semibold tabular-nums text-red-600">
+                                  {formatCurrency(Number(inv.total_amount ?? 0))}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+
+                      {upcomingInvoices.length > 0 ? (
+                        <div className="space-y-3">
+                          <div className="text-xs font-medium text-orange-600">Yaklaşan (7 gün)</div>
+                          {upcomingInvoices.map((inv) => {
+                            const customerName = customersById.get(inv.customer_id)?.name ?? 'Müşteri'
+                            const due = parseISO(inv.due_date)
+                            const daysLeft = Math.max(0, differenceInCalendarDays(due, startOfDay(new Date())))
+                            return (
+                              <div key={inv.id} className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium truncate">{customerName}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Vade: {formatShortDate(inv.due_date)} • {daysLeft} gün kaldı
+                                  </div>
+                                </div>
+                                <div className="text-sm font-semibold tabular-nums text-orange-600">
+                                  {formatCurrency(Number(inv.total_amount ?? 0))}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </TabsContent>
+              </CardContent>
+            </Card>
+          </Tabs>
+        </div>
       </div>
     </AppLayout>
   )

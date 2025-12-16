@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { AppLayout } from '../components/layout/AppLayout'
 import { CustomerForm } from '../components/forms/CustomerForm'
 import {
@@ -18,12 +18,13 @@ import { Skeleton } from '../components/ui/skeleton'
 import { toast } from '../components/ui/use-toast'
 import { useCustomers, useDeleteCustomer, useDeleteCustomerCascade } from '../hooks/useSupabaseQuery'
 import type { Database } from '../types/database'
-import { Building2, Pencil, Plus, Search, Trash2, User } from 'lucide-react'
+import { Building2, ChevronRight, Pencil, Plus, Search, Trash2, User } from 'lucide-react'
 
 type CustomerRow = Database['public']['Tables']['customers']['Row']
 
 export function CustomersPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [open, setOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null)
   const [deletingCustomer, setDeletingCustomer] = useState<CustomerRow | null>(null)
@@ -46,6 +47,15 @@ export function CustomersPage() {
       return name.includes(q) || email.includes(q) || phone.includes(q)
     })
   }, [customers, searchQuery])
+
+  useEffect(() => {
+    const state = (location.state ?? {}) as any
+    if (state?.openNew) {
+      setEditingCustomer(null)
+      setOpen(true)
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.pathname, location.state, navigate])
 
   return (
     <AppLayout title="Müşteriler">
@@ -151,7 +161,11 @@ export function CustomersPage() {
                     filteredCustomers.map((customer) => (
                       <tr key={customer.id} className="border-b">
                         <td className="p-4">
-                          <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            className="group flex items-center gap-3 p-2 -ml-2 rounded-lg transition-all duration-200 hover:bg-gray-100 dark:hover:bg-white/5 cursor-pointer"
+                            onClick={() => navigate(`/customers/${customer.id}`)}
+                          >
                             <div
                               className={
                                 customer.type === 'corporate'
@@ -165,14 +179,14 @@ export function CustomersPage() {
                                 <User className="h-4 w-4" />
                               )}
                             </div>
-                            <button
-                              type="button"
-                              className="font-medium text-left hover:underline"
-                              onClick={() => navigate(`/customers/${customer.id}`)}
-                            >
-                              {customer.name}
-                            </button>
-                          </div>
+
+                            <div className="flex items-center gap-1 min-w-0">
+                              <span className="font-medium text-gray-900 dark:text-gray-100 text-left truncate">
+                                {customer.name}
+                              </span>
+                              <ChevronRight className="w-4 h-4 text-gray-400 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200" />
+                            </div>
+                          </button>
                         </td>
                         <td className="p-4">{customer.phone || '-'}</td>
                         <td className="p-4">{customer.email || '-'}</td>

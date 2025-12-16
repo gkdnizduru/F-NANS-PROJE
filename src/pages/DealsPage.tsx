@@ -26,7 +26,7 @@ import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { DndContext, PointerSensor, closestCorners, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 type DealRow = Database['public']['Tables']['deals']['Row']
 
@@ -63,6 +63,7 @@ const stageBadgeClasses: Record<Stage, string> = {
 
 export function DealsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [open, setOpen] = useState(false)
   const [editingDeal, setEditingDeal] = useState<DealRow | null>(null)
@@ -83,6 +84,15 @@ export function DealsPage() {
     if (activeDealId) return
     setLocalDeals(dealsQuery.data ?? [])
   }, [activeDealId, dealsQuery.data])
+
+  useEffect(() => {
+    const state = (location.state ?? {}) as any
+    if (state?.openNew) {
+      setEditingDeal(null)
+      setOpen(true)
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.pathname, location.state, navigate])
 
   const customersById = useMemo(() => {
     return new Map((customersQuery.data ?? []).map((c) => [c.id, c]))
@@ -307,14 +317,14 @@ export function DealsPage() {
               }
             }}
           >
-            <div className="overflow-x-auto">
-              <div className="flex gap-4 min-w-max pb-2">
+            <div className="overflow-x-auto lg:overflow-visible">
+              <div className="flex gap-4 min-w-max lg:min-w-0 lg:w-full pb-2">
                 {stageOrder.map((stage) => {
                   const list = dealsByStage.get(stage) ?? []
                   const total = stageTotals.get(stage) ?? 0
 
                   return (
-                    <div key={stage} className="w-[320px] shrink-0">
+                    <div key={stage} className="w-[320px] shrink-0 lg:flex-1 lg:w-auto lg:min-w-0">
                       <Column stage={stage}>
                         <div className="px-4 py-3 border-b border-border/50">
                           <div className="flex items-center justify-between">

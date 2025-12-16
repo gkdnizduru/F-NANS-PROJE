@@ -147,8 +147,8 @@ export function ProductsPage() {
                       filteredProducts.map((p) => {
                         const isProduct = p.type === 'product'
                         const badgeClass = isProduct
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                          ? 'bg-green-100 text-green-700 border border-transparent dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/20'
+                          : 'bg-blue-100 text-blue-700 border border-transparent dark:bg-blue-500/15 dark:text-blue-400 dark:border-blue-500/20'
 
                         return (
                           <tr key={p.id} className="border-b">
@@ -162,7 +162,10 @@ export function ProductsPage() {
                             </td>
                             <td className="p-4">{p.sku || '-'}</td>
                             <td className="p-4">
-                              <Badge variant="outline" className={cn('capitalize', badgeClass)}>
+                              <Badge
+                                variant="outline"
+                                className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', badgeClass)}
+                              >
                                 {isProduct ? 'Ürün' : 'Hizmet'}
                               </Badge>
                             </td>

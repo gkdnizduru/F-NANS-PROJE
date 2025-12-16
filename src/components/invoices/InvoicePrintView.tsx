@@ -134,32 +134,36 @@ export function InvoicePrintView({ invoiceId }: { invoiceId: string }) {
         className="w-full max-w-[210mm] min-h-[297mm] bg-white text-slate-900 shadow-sm border print:block print:w-full print:max-w-none print:min-h-0 print:shadow-none print:border-none"
       >
         <div className="p-10" style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
-          <div className="flex flex-col items-center text-center">
-            {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt="Logo"
-                className="mb-4 h-32 w-32 max-h-[150px] max-w-[150px] object-contain"
-              />
-            ) : null}
-
-            <div className="text-2xl font-bold uppercase tracking-tight">{companyName}</div>
-            <div className="mt-2 space-y-1 text-sm text-gray-600">
-              {senderAddress ? <div>{senderAddress}</div> : null}
-              {senderEmail ? <div>{senderEmail}</div> : null}
-              {senderPhone ? <div>{senderPhone}</div> : null}
-              {senderWebsite ? <div>{senderWebsite}</div> : null}
+          <div className="flex items-start justify-between border-b pb-4 mb-6">
+            <div className="flex flex-col items-start">
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt="Logo"
+                  className="h-14 w-auto max-w-[200px] object-contain mb-3"
+                />
+              ) : null}
+              <div className="text-left">
+                <div className="text-lg font-bold uppercase tracking-tight">{companyName}</div>
+                <div className="mt-1 text-xs text-gray-600 space-y-0.5">
+                  {senderAddress && <div>{senderAddress}</div>}
+                  {senderEmail && <div>{senderEmail}</div>}
+                  {senderPhone && <div>{senderPhone}</div>}
+                </div>
+              </div>
             </div>
 
-            <div className="mt-6">
-              <div className="text-xs tracking-[0.2em] text-slate-500">FATURA</div>
-              <div className="mt-2 text-lg font-semibold">{invoice.invoice_number}</div>
-              <div className="mt-1 text-sm text-slate-600">Tarih: {formatShortDate(invoice.invoice_date)}</div>
-              <div className="text-sm text-slate-600">Vade: {formatShortDate(invoice.due_date)}</div>
+            <div className="text-right">
+              <div className="text-xs tracking-wider text-slate-500 uppercase">Fatura</div>
+              <div className="mt-1 text-base font-semibold">{invoice.invoice_number}</div>
+              <div className="mt-1 text-xs text-slate-600">
+                <div>Tarih: {formatShortDate(invoice.invoice_date)}</div>
+                <div>Vade: {formatShortDate(invoice.due_date)}</div>
+              </div>
             </div>
           </div>
 
-          <div className="mt-12 grid grid-cols-2 gap-8">
+          <div className="grid grid-cols-2 gap-6 mb-6">
             <div className="rounded-md border p-4">
               <div className="text-xs font-medium text-slate-500">Sayın:</div>
               <div className="mt-2 text-sm font-semibold">{customer?.name ?? '-'}</div>

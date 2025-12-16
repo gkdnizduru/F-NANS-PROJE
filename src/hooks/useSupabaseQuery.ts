@@ -16,6 +16,10 @@ type ActivityLogRow = Tables['activity_logs']['Row']
 type InvoiceRow = Tables['invoices']['Row']
 type InvoiceItemRow = Tables['invoice_items']['Row']
 type ActivityRow = Tables['activities']['Row']
+type NoteRow = Tables['notes']['Row']
+type AttachmentRow = Tables['attachments']['Row']
+
+const CUSTOMER_FILES_BUCKET = (import.meta as any).env?.VITE_CUSTOMER_FILES_BUCKET || 'customer-files'
 
 async function logActivity(message: string) {
   const { data } = await supabase.auth.getUser()
@@ -45,6 +49,307 @@ export function useCategories(type?: 'income' | 'expense') {
       const { data, error } = await query.order('created_at', { ascending: false })
       if (error) throw error
       return data ?? []
+    },
+  })
+}
+
+export type CustomerFileItem = {
+  name: string
+  path: string
+  signed_url: string | null
+  metadata?: any
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export function useCustomerFiles(customerId?: string | null) {
+  return useQuery<CustomerFileItem[]>({
+    queryKey: ['customer-files', customerId],
+    enabled: Boolean(customerId),
+    queryFn: async () => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const prefix = `${userId}/${customerId as string}/`
+      const { data, error } = await supabase.storage.from(CUSTOMER_FILES_BUCKET).list(prefix, {
+        limit: 100,
+        sortBy: { column: 'created_at', order: 'desc' },
+      })
+      if (error) throw error
+
+      const files = (data ?? []).filter((x: any) => x?.name)
+      const withUrls = await Promise.all(
+        files.map(async (f: any) => {
+          const path = `${prefix}${String(f.name)}`
+          const { data: signed, error: signedError } = await supabase.storage
+            .from(CUSTOMER_FILES_BUCKET)
+            .createSignedUrl(path, 60 * 60)
+          if (signedError) {
+            return {
+              name: String(f.name),
+              path,
+              signed_url: null,
+              metadata: (f as any).metadata,
+              created_at: (f as any).created_at ?? null,
+              updated_at: (f as any).updated_at ?? null,
+            } as CustomerFileItem
+          }
+
+          return {
+            name: String(f.name),
+            path,
+            signed_url: (signed as any)?.signedUrl ?? null,
+            metadata: (f as any).metadata,
+            created_at: (f as any).created_at ?? null,
+            updated_at: (f as any).updated_at ?? null,
+          } as CustomerFileItem
+        })
+      )
+
+      return withUrls
+    },
+  })
+}
+
+export function useUploadCustomerFile() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { customer_id: string; file: File }) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const safeName = payload.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${userId}/${payload.customer_id}/${Date.now()}_${safeName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from(CUSTOMER_FILES_BUCKET)
+        .upload(path, payload.file, { upsert: false, contentType: payload.file.type })
+
+      if (uploadError) {
+        const msg = String((uploadError as any)?.message ?? '')
+        if (msg.toLowerCase().includes('bucket') && msg.toLowerCase().includes('not found')) {
+          throw new Error(`Bucket not found: ${CUSTOMER_FILES_BUCKET}`)
+        }
+        throw uploadError
+      }
+
+      return { path }
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['customer-files', vars.customer_id] })
+    },
+  })
+}
+
+export function useDeleteCustomerFile() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { customer_id: string; path: string }) => {
+      const { error } = await supabase.storage.from(CUSTOMER_FILES_BUCKET).remove([payload.path])
+      if (error) throw error
+      return true
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['customer-files', vars.customer_id] })
+    },
+  })
+}
+
+export function useCustomerNotes(customerId?: string | null) {
+  return useQuery<NoteRow[]>({
+    queryKey: ['notes', 'customer', customerId],
+    enabled: Boolean(customerId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('notes')
+        .select('*')
+        .eq('customer_id', customerId as string)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+export function useCreateNote() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { customer_id: string; content: string }) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const { data, error } = await supabase
+        .from('notes')
+        .insert({
+          user_id: userId,
+          customer_id: payload.customer_id,
+          content: payload.content,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['notes', 'customer', vars.customer_id] })
+    },
+  })
+}
+
+export function useUpdateNote() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; content: string }) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const { data, error } = await supabase
+        .from('notes')
+        .update({ content: payload.content })
+        .eq('id', payload.id)
+        .eq('user_id', userId)
+        .select()
+        .maybeSingle()
+
+      if (error) throw error
+      if (!data) throw new Error('Not bulunamadı veya bu işlem için yetkiniz yok.')
+      return data
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
+      const customerId = data?.customer_id as string | undefined
+      if (customerId) {
+        queryClient.invalidateQueries({ queryKey: ['notes', 'customer', customerId] })
+      }
+    },
+  })
+}
+
+export function useDeleteNote() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string }) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const { error } = await supabase.from('notes').delete().eq('id', payload.id).eq('user_id', userId)
+      if (error) throw error
+      return true
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
+    },
+  })
+}
+
+export function useCustomerAttachments(customerId?: string | null) {
+  return useQuery<Array<AttachmentRow & { signed_url: string | null }>>({
+    queryKey: ['attachments', 'customer', customerId],
+    enabled: Boolean(customerId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('attachments')
+        .select('*')
+        .eq('customer_id', customerId as string)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const rows = (data ?? []) as AttachmentRow[]
+      const withUrls = await Promise.all(
+        rows.map(async (row) => {
+          const path = String((row as any).file_url ?? '')
+          if (!path) return { ...row, signed_url: null }
+          const { data: signed, error: signedError } = await supabase
+            .storage
+            .from(CUSTOMER_FILES_BUCKET)
+            .createSignedUrl(path, 60 * 60)
+          if (signedError) return { ...row, signed_url: null }
+          return { ...row, signed_url: signed?.signedUrl ?? null }
+        })
+      )
+
+      return withUrls
+    },
+  })
+}
+
+export function useUploadCustomerAttachment() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { customer_id: string; file: File }) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const safeName = payload.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${userId}/${payload.customer_id}/${Date.now()}_${safeName}`
+
+      const { error: uploadError } = await supabase
+        .storage
+        .from(CUSTOMER_FILES_BUCKET)
+        .upload(path, payload.file, { upsert: false, contentType: payload.file.type })
+
+      if (uploadError) {
+        const msg = String((uploadError as any)?.message ?? '')
+        if (msg.toLowerCase().includes('bucket') && msg.toLowerCase().includes('not found')) {
+          throw new Error(`Bucket not found: ${CUSTOMER_FILES_BUCKET}`)
+        }
+        throw uploadError
+      }
+
+      const { data, error } = await supabase
+        .from('attachments')
+        .insert({
+          user_id: userId,
+          customer_id: payload.customer_id,
+          file_name: payload.file.name,
+          file_url: path,
+          file_type: payload.file.type || 'application/octet-stream',
+          file_size: payload.file.size,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['attachments', 'customer', vars.customer_id] })
+    },
+  })
+}
+
+export function useDeleteCustomerAttachment() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; customer_id: string; file_url: string }) => {
+      const path = payload.file_url
+      if (path) {
+        const { error: removeError } = await supabase.storage.from(CUSTOMER_FILES_BUCKET).remove([path])
+        if (removeError) throw removeError
+      }
+
+      const { error } = await supabase.from('attachments').delete().eq('id', payload.id)
+      if (error) throw error
+      return true
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['attachments', 'customer', vars.customer_id] })
     },
   })
 }

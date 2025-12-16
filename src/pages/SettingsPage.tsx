@@ -44,6 +44,10 @@ export function SettingsPage() {
   const [logoUrl, setLogoUrl] = useState<string>('')
   const [notifications, setNotifications] = useState(true)
 
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
+
   const [newIncomeCategory, setNewIncomeCategory] = useState('')
   const [newExpenseCategory, setNewExpenseCategory] = useState('')
 
@@ -201,6 +205,47 @@ export function SettingsPage() {
   const handleLogout = async () => {
     await signOut()
     navigate('/login')
+  }
+
+  const handleUpdatePassword = async () => {
+    const password = newPassword
+    const confirm = confirmPassword
+
+    if (!password || !confirm) {
+      toast({
+        title: 'Şifre güncellenemedi',
+        description: 'Lütfen tüm alanları doldurun',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (password !== confirm) {
+      toast({
+        title: 'Şifre güncellenemedi',
+        description: 'Şifreler eşleşmiyor',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    try {
+      setIsUpdatingPassword(true)
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error) throw error
+
+      toast({ title: 'Şifreniz başarıyla güncellendi' })
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (e: any) {
+      toast({
+        title: 'Şifre güncellenemedi',
+        description: e?.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsUpdatingPassword(false)
+    }
   }
 
   return (
@@ -655,6 +700,45 @@ export function SettingsPage() {
                   }`}
                 />
               </button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Güvenlik</CardTitle>
+            <CardDescription>Hesap şifrenizi güncelleyin.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="newPassword">Yeni Şifre</Label>
+                <Input
+                  id="newPassword"
+                  type="password"
+                  placeholder="Yeni şifreniz"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  disabled={isUpdatingPassword}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Yeni Şifre (Tekrar)</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="Şifreyi onaylayın"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={isUpdatingPassword}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button type="button" onClick={handleUpdatePassword} disabled={isUpdatingPassword}>
+                Şifreyi Güncelle
+              </Button>
             </div>
           </CardContent>
         </Card>

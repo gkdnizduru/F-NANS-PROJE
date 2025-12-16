@@ -186,6 +186,63 @@ export interface Database {
         }
         Relationships: []
       }
+      notes: {
+        Row: {
+          id: string
+          user_id: string
+          customer_id: string
+          content: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          customer_id: string
+          content: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          customer_id?: string
+          content?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      attachments: {
+        Row: {
+          id: string
+          user_id: string
+          customer_id: string
+          file_name: string
+          file_url: string
+          file_type: string
+          file_size: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          customer_id: string
+          file_name: string
+          file_url: string
+          file_type: string
+          file_size: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          customer_id?: string
+          file_name?: string
+          file_url?: string
+          file_type?: string
+          file_size?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
       transactions: {
         Row: {
           id: string
