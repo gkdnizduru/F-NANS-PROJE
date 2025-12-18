@@ -31,6 +31,7 @@ import {
   useInvoiceItems,
   useInvoicePayments,
   useInvoicesByDateRange,
+  useUpdateInvoiceStatus,
 } from '../hooks/useSupabaseQuery'
 import { INVOICE_STATUS_LABELS } from '../lib/constants'
 import { formatCurrency, formatShortDate } from '../lib/format'
@@ -52,11 +53,13 @@ import {
 import { tr } from 'date-fns/locale'
 import {
   Calendar as CalendarIcon,
+  CheckCircle2,
   Copy,
   ExternalLink,
   Pencil,
   Plus,
   Printer,
+  RotateCcw,
   Search,
   Share2,
   Trash2,
@@ -66,6 +69,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Input } from '../components/ui/input'
 import { Textarea } from '../components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
 
@@ -77,6 +81,7 @@ type DateRange = {
 const statusVariants: Record<InvoiceRow['status'], 'secondary' | 'default' | 'destructive'> = {
   draft: 'secondary',
   sent: 'default',
+  pending: 'secondary',
   paid: 'default',
   cancelled: 'destructive',
 }
@@ -84,6 +89,7 @@ const statusVariants: Record<InvoiceRow['status'], 'secondary' | 'default' | 'de
 const statusBadgeClasses: Record<InvoiceRow['status'], string> = {
   draft: 'border-transparent bg-gray-100 text-gray-800 dark:bg-gray-500/20 dark:text-gray-400 dark:border-gray-500/20',
   sent: 'border-transparent bg-yellow-100 text-yellow-800 dark:bg-yellow-500/15 dark:text-yellow-400 dark:border-yellow-500/20',
+  pending: 'border-transparent bg-slate-100 text-slate-800 dark:bg-slate-500/20 dark:text-slate-300 dark:border-slate-500/20',
   paid: 'border-transparent bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/20',
   cancelled: 'border-transparent bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/20',
 }
@@ -120,6 +126,7 @@ export function InvoicesPage() {
   const now = new Date()
   const [searchParams, setSearchParams] = useSearchParams()
   const openInvoiceId = searchParams.get('open')
+  const activeTab = searchParams.get('tab') === 'paid' ? 'paid' : 'unpaid'
   const [autoOpenAttempts, setAutoOpenAttempts] = useState(0)
 
   const [open, setOpen] = useState(false)
@@ -157,6 +164,7 @@ export function InvoicesPage() {
   const invoicesQuery = useInvoicesByDateRange({ from: dateFromStr, to: dateToStr })
   const customersQuery = useCustomers()
   const deleteInvoice = useDeleteInvoice()
+  const updateInvoiceStatus = useUpdateInvoiceStatus()
 
   const paymentsQuery = useInvoicePayments(editingInvoice?.id)
   const quickPaymentsQuery = useInvoicePayments(selectedInvoiceForPayment?.id)
@@ -205,6 +213,14 @@ export function InvoicesPage() {
       return invNo.includes(q) || customerName.includes(q) || itemsText.includes(q)
     })
   }, [customersById, invoices, searchQuery])
+
+  const unpaidInvoices = useMemo(() => {
+    return filteredInvoices.filter((inv) => inv.status !== 'paid' && inv.status !== 'cancelled')
+  }, [filteredInvoices])
+
+  const paidInvoices = useMemo(() => {
+    return filteredInvoices.filter((inv) => inv.status === 'paid')
+  }, [filteredInvoices])
 
   useEffect(() => {
     if (!openInvoiceId) return
@@ -488,204 +504,354 @@ export function InvoicesPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {invoicesQuery.isLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            ) : invoicesQuery.isError ? (
-              <p className="text-sm text-destructive">
-                {(invoicesQuery.error as any)?.message || 'Faturalar yüklenemedi'}
-              </p>
-            ) : (
-              <div className="rounded-md border">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                        Fatura No
-                      </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                        Tarih
-                      </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                        Müşteri
-                      </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                        Hizmet/Ürün
-                      </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
-                        Durum
-                      </th>
-                      <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
-                        Toplam
-                      </th>
-                      <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
-                        İşlem
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredInvoices.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="h-32 text-center">
-                          <p className="text-sm text-muted-foreground">
-                            Henüz fatura oluşturulmadı.
-                          </p>
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredInvoices.map((inv) => {
-                        const customer = (inv as any)?.customer ?? customersById.get(inv.customer_id)
-                        const items = ((inv as any)?.invoice_items ?? []) as Array<{ description?: string | null }>
-                        const first = items[0]?.description ?? ''
-                        const itemsLabel =
-                          items.length === 0
-                            ? '-'
-                            : items.length === 1
-                              ? String(first)
-                              : `${String(first)} (+${items.length - 1} kalem)`
+            <Tabs
+              value={activeTab}
+              onValueChange={(v) => {
+                if (v !== 'paid' && v !== 'unpaid') return
+                setSearchParams((prev) => {
+                  const next = new URLSearchParams(prev)
+                  next.set('tab', v)
+                  return next
+                })
+              }}
+            >
+              <TabsList className="mb-4">
+                <TabsTrigger value="unpaid">Ödenmemiş ({unpaidInvoices.length})</TabsTrigger>
+                <TabsTrigger value="paid">Ödenmiş ({paidInvoices.length})</TabsTrigger>
+              </TabsList>
 
-                        const displayStatus = getInvoicePaymentStatus(inv)
-                        const badgeVariant =
-                          displayStatus.key === 'draft' || displayStatus.key === 'cancelled'
-                            ? statusVariants[inv.status]
-                            : paymentStatusVariants[displayStatus.key] ?? 'secondary'
-                        const badgeClassName =
-                          displayStatus.key === 'draft' || displayStatus.key === 'cancelled'
-                            ? statusBadgeClasses[inv.status]
-                            : paymentStatusBadgeClasses[displayStatus.key] ?? ''
+              <TabsContent value="unpaid" className="mt-0">
+                {invoicesQuery.isLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : invoicesQuery.isError ? (
+                  <p className="text-sm text-destructive">
+                    {(invoicesQuery.error as any)?.message || 'Faturalar yüklenemedi'}
+                  </p>
+                ) : (
+                  <div className="rounded-md border">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Fatura No</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Tarih</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Müşteri</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Hizmet/Ürün</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Durum</th>
+                          <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Toplam</th>
+                          <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">İşlem</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {unpaidInvoices.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="h-32 text-center">
+                              <p className="text-sm text-muted-foreground">Ödenmemiş fatura bulunamadı.</p>
+                            </td>
+                          </tr>
+                        ) : (
+                          unpaidInvoices.map((inv) => {
+                            const customer = (inv as any)?.customer ?? customersById.get(inv.customer_id)
+                            const items = ((inv as any)?.invoice_items ?? []) as Array<{ description?: string | null }>
+                            const first = items[0]?.description ?? ''
+                            const itemsLabel =
+                              items.length === 0
+                                ? '-'
+                                : items.length === 1
+                                  ? String(first)
+                                  : `${String(first)} (+${items.length - 1} kalem)`
 
-                        return (
-                          <tr key={inv.id} className="border-b">
-                            <td className="p-4 font-medium">{inv.invoice_number}</td>
-                            <td className="p-4">{formatShortDate(inv.invoice_date)}</td>
-                            <td className="p-4">{customer?.name || '-'}</td>
-                            <td className="p-4 max-w-[320px]">
-                              <div className="truncate" title={itemsLabel}>
-                                {itemsLabel}
-                              </div>
-                            </td>
-                            <td className="p-4">
-                              <Badge variant={badgeVariant} className={badgeClassName}>
-                                {displayStatus.key === 'draft' || displayStatus.key === 'cancelled'
-                                  ? INVOICE_STATUS_LABELS[inv.status]
-                                  : displayStatus.label}
-                              </Badge>
-                            </td>
-                            <td className="p-4 text-right font-medium">
-                              {formatCurrency(Number(inv.total_amount))}
-                            </td>
-                            <td className="p-4 text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  onClick={() => setPrintingInvoice(inv)}
-                                  title="Yazdır"
-                                >
-                                  <Printer className="h-4 w-4" />
-                                </Button>
+                            const displayStatus = getInvoicePaymentStatus(inv)
+                            const badgeVariant =
+                              displayStatus.key === 'draft' || displayStatus.key === 'cancelled'
+                                ? statusVariants[inv.status]
+                                : paymentStatusVariants[displayStatus.key] ?? 'secondary'
+                            const badgeClassName =
+                              displayStatus.key === 'draft' || displayStatus.key === 'cancelled'
+                                ? statusBadgeClasses[inv.status]
+                                : paymentStatusBadgeClasses[displayStatus.key] ?? ''
 
-                                <DropdownMenu.Root>
-                                  <DropdownMenu.Trigger asChild>
+                            return (
+                              <tr key={inv.id} className="border-b">
+                                <td className="p-4 font-medium">{inv.invoice_number}</td>
+                                <td className="p-4">{formatShortDate(inv.invoice_date)}</td>
+                                <td className="p-4">{customer?.name || '-'}</td>
+                                <td className="p-4 max-w-[320px]">
+                                  <div className="truncate" title={itemsLabel}>
+                                    {itemsLabel}
+                                  </div>
+                                </td>
+                                <td className="p-4">
+                                  <Badge variant={badgeVariant} className={badgeClassName}>
+                                    {displayStatus.key === 'draft' || displayStatus.key === 'cancelled'
+                                      ? INVOICE_STATUS_LABELS[inv.status]
+                                      : displayStatus.label}
+                                  </Badge>
+                                </td>
+                                <td className="p-4 text-right font-medium">{formatCurrency(Number(inv.total_amount))}</td>
+                                <td className="p-4 text-right">
+                                  <div className="flex justify-end gap-2">
                                     <Button
                                       variant="outline"
                                       size="icon"
-                                      title={inv.token ? 'Paylaş' : 'Paylaşmak için token gerekli'}
-                                      disabled={!inv.token}
+                                      onClick={() => setPrintingInvoice(inv)}
+                                      title="Yazdır"
                                     >
-                                      <Share2 className="h-4 w-4" />
+                                      <Printer className="h-4 w-4" />
                                     </Button>
-                                  </DropdownMenu.Trigger>
-                                  <DropdownMenu.Portal>
-                                    <DropdownMenu.Content
-                                      align="end"
-                                      sideOffset={6}
-                                      className="z-50 min-w-[220px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+
+                                    <DropdownMenu.Root>
+                                      <DropdownMenu.Trigger asChild>
+                                        <Button
+                                          variant="outline"
+                                          size="icon"
+                                          title={inv.token ? 'Paylaş' : 'Paylaşmak için token gerekli'}
+                                          disabled={!inv.token}
+                                        >
+                                          <Share2 className="h-4 w-4" />
+                                        </Button>
+                                      </DropdownMenu.Trigger>
+                                      <DropdownMenu.Portal>
+                                        <DropdownMenu.Content
+                                          align="end"
+                                          sideOffset={6}
+                                          className="z-50 min-w-[220px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                                        >
+                                          <DropdownMenu.Item
+                                            className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+                                            onSelect={async () => {
+                                              try {
+                                                const token = inv.token
+                                                if (!token) return
+                                                const fullUrl = `${window.location.origin}/p/invoice/${token}`
+                                                await navigator.clipboard.writeText(fullUrl)
+                                                toast({ title: 'Link kopyalandı' })
+                                              } catch (e: any) {
+                                                toast({
+                                                  title: 'Kopyalama başarısız',
+                                                  description: e?.message || 'Bilinmeyen hata',
+                                                  variant: 'destructive',
+                                                })
+                                              }
+                                            }}
+                                          >
+                                            <Copy className="h-4 w-4" />
+                                            Bağlantıyı Kopyala
+                                          </DropdownMenu.Item>
+
+                                          <DropdownMenu.Item
+                                            className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+                                            onSelect={() => {
+                                              const token = inv.token
+                                              if (!token) return
+                                              const fullUrl = `${window.location.origin}/p/invoice/${token}`
+                                              window.open(fullUrl, '_blank', 'noopener,noreferrer')
+                                            }}
+                                          >
+                                            <ExternalLink className="h-4 w-4" />
+                                            Önizle / Yazdır
+                                          </DropdownMenu.Item>
+                                        </DropdownMenu.Content>
+                                      </DropdownMenu.Portal>
+                                    </DropdownMenu.Root>
+
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      disabled={updateInvoiceStatus.isPending}
+                                      onClick={async () => {
+                                        try {
+                                          await updateInvoiceStatus.mutateAsync({ id: inv.id, status: 'paid' })
+                                          toast({ title: 'Fatura ödendi olarak işaretlendi' })
+                                        } catch (e: any) {
+                                          toast({ title: 'Güncellenemedi', description: e?.message, variant: 'destructive' })
+                                        }
+                                      }}
+                                      title="Ödendi Olarak İşaretle"
                                     >
-                                      <DropdownMenu.Item
-                                        className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-                                        onSelect={async () => {
-                                          try {
-                                            const token = inv.token
-                                            if (!token) return
-                                            const fullUrl = `${window.location.origin}/p/invoice/${token}`
-                                            await navigator.clipboard.writeText(fullUrl)
-                                            toast({ title: 'Link kopyalandı' })
-                                          } catch (e: any) {
-                                            toast({
-                                              title: 'Kopyalama başarısız',
-                                              description: e?.message || 'Bilinmeyen hata',
-                                              variant: 'destructive',
-                                            })
-                                          }
-                                        }}
-                                      >
-                                        <Copy className="h-4 w-4" />
-                                        Bağlantıyı Kopyala
-                                      </DropdownMenu.Item>
+                                      <CheckCircle2 className="h-4 w-4" />
+                                    </Button>
 
-                                      <DropdownMenu.Item
-                                        className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-                                        onSelect={() => {
-                                          const token = inv.token
-                                          if (!token) return
-                                          const fullUrl = `${window.location.origin}/p/invoice/${token}`
-                                          window.open(fullUrl, '_blank', 'noopener,noreferrer')
-                                        }}
-                                      >
-                                        <ExternalLink className="h-4 w-4" />
-                                        Önizle / Yazdır
-                                      </DropdownMenu.Item>
-                                    </DropdownMenu.Content>
-                                  </DropdownMenu.Portal>
-                                </DropdownMenu.Root>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => {
+                                        setEditingInvoice(inv)
+                                        setOpen(true)
+                                      }}
+                                      title="Düzenle"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => {
+                                        setSelectedInvoiceForPayment(inv)
+                                        setQuickPaymentAmount('')
+                                        setQuickPaymentDate(format(new Date(), 'yyyy-MM-dd'))
+                                        setQuickPaymentMethod('Banka')
+                                      }}
+                                      title="Hızlı Ödeme"
+                                    >
+                                      <Wallet className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                      onClick={() => setDeletingInvoice(inv)}
+                                      title="Sil"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </TabsContent>
 
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => {
-                                    setEditingInvoice(inv)
-                                    setOpen(true)
-                                  }}
-                                  title="Düzenle"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => {
-                                    setSelectedInvoiceForPayment(inv)
-                                    setQuickPaymentAmount('')
-                                    setQuickPaymentDate(format(new Date(), 'yyyy-MM-dd'))
-                                    setQuickPaymentMethod('Banka')
-                                  }}
-                                  title="Hızlı Ödeme"
-                                >
-                                  <Wallet className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  onClick={() => setDeletingInvoice(inv)}
-                                  title="Sil"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
+              <TabsContent value="paid" className="mt-0">
+                {invoicesQuery.isLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : invoicesQuery.isError ? (
+                  <p className="text-sm text-destructive">
+                    {(invoicesQuery.error as any)?.message || 'Faturalar yüklenemedi'}
+                  </p>
+                ) : (
+                  <div className="rounded-md border">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Fatura No</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Tarih</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Müşteri</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Hizmet/Ürün</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Durum</th>
+                          <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Toplam</th>
+                          <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">İşlem</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paidInvoices.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="h-32 text-center">
+                              <p className="text-sm text-muted-foreground">Ödenmiş fatura bulunamadı.</p>
                             </td>
                           </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                        ) : (
+                          paidInvoices.map((inv) => {
+                            const customer = (inv as any)?.customer ?? customersById.get(inv.customer_id)
+                            const items = ((inv as any)?.invoice_items ?? []) as Array<{ description?: string | null }>
+                            const first = items[0]?.description ?? ''
+                            const itemsLabel =
+                              items.length === 0
+                                ? '-'
+                                : items.length === 1
+                                  ? String(first)
+                                  : `${String(first)} (+${items.length - 1} kalem)`
+
+                            const displayStatus = getInvoicePaymentStatus(inv)
+                            const badgeVariant =
+                              displayStatus.key === 'draft' || displayStatus.key === 'cancelled'
+                                ? statusVariants[inv.status]
+                                : paymentStatusVariants[displayStatus.key] ?? 'secondary'
+                            const badgeClassName =
+                              displayStatus.key === 'draft' || displayStatus.key === 'cancelled'
+                                ? statusBadgeClasses[inv.status]
+                                : paymentStatusBadgeClasses[displayStatus.key] ?? ''
+
+                            return (
+                              <tr key={inv.id} className="border-b">
+                                <td className="p-4 font-medium">{inv.invoice_number}</td>
+                                <td className="p-4">{formatShortDate(inv.invoice_date)}</td>
+                                <td className="p-4">{customer?.name || '-'}</td>
+                                <td className="p-4 max-w-[320px]">
+                                  <div className="truncate" title={itemsLabel}>
+                                    {itemsLabel}
+                                  </div>
+                                </td>
+                                <td className="p-4">
+                                  <Badge variant={badgeVariant} className={badgeClassName}>
+                                    {displayStatus.key === 'draft' || displayStatus.key === 'cancelled'
+                                      ? INVOICE_STATUS_LABELS[inv.status]
+                                      : displayStatus.label}
+                                  </Badge>
+                                </td>
+                                <td className="p-4 text-right font-medium">{formatCurrency(Number(inv.total_amount))}</td>
+                                <td className="p-4 text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      onClick={() => setPrintingInvoice(inv)}
+                                      title="Yazdır"
+                                    >
+                                      <Printer className="h-4 w-4" />
+                                    </Button>
+
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      disabled={updateInvoiceStatus.isPending}
+                                      onClick={async () => {
+                                        try {
+                                          await updateInvoiceStatus.mutateAsync({ id: inv.id, status: 'pending' })
+                                          toast({ title: 'Fatura ödenmedi olarak işaretlendi' })
+                                        } catch (e: any) {
+                                          toast({ title: 'Güncellenemedi', description: e?.message, variant: 'destructive' })
+                                        }
+                                      }}
+                                      title="Ödenmedi Olarak İşaretle"
+                                    >
+                                      <RotateCcw className="h-4 w-4" />
+                                    </Button>
+
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => {
+                                        setEditingInvoice(inv)
+                                        setOpen(true)
+                                      }}
+                                      title="Düzenle"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                      onClick={() => setDeletingInvoice(inv)}
+                                      title="Sil"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 

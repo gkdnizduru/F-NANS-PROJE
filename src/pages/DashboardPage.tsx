@@ -11,12 +11,27 @@ import {
   AlertCircle,
   Calendar as CalendarIcon,
   Check,
+  ChevronRight,
   ChevronsUpDown,
   FileText,
   Users,
   Briefcase,
 } from 'lucide-react'
-import { AreaChart, Area, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
+import {
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  BarChart,
+  Bar,
+  LabelList,
+} from 'recharts'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -58,6 +73,7 @@ export function DashboardPage() {
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([])
   const [accountFilterOpen, setAccountFilterOpen] = useState(false)
   const [accountFilterQuery, setAccountFilterQuery] = useState('')
+  const [financialMode, setFinancialMode] = useState<'income' | 'expense'>('expense')
   const [dateRange, setDateRange] = useState<DateRange>(() => ({
     from: startOfMonth(now),
     to: endOfMonth(now),
@@ -468,42 +484,189 @@ export function DashboardPage() {
       byMonth.set(key, prev)
     }
 
-    return Array.from(byMonth.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .slice(-12)
-      .map(([month, v]) => ({ month, gelir: v.gelir, gider: v.gider }))
+    const anchor = startOfMonth(new Date())
+    const padded: Array<{ name: string; gelir: number; gider: number }> = []
+
+    for (let i = 5; i >= 0; i -= 1) {
+      const d = startOfMonth(subMonths(anchor, i))
+      const key = format(d, 'yyyy-MM')
+      const v = byMonth.get(key) ?? { gelir: 0, gider: 0 }
+      padded.push({ name: key, gelir: v.gelir, gider: v.gider })
+    }
+
+    return padded
   }, [transactions])
 
-  const expenseCategoryData = useMemo(() => {
+  const financialCategoryData = useMemo(() => {
     const totals = new Map<string, number>()
 
     for (const t of transactions) {
-      if (t.type !== 'expense') continue
+      if (t.type !== financialMode) continue
       const key = t.category || 'Diğer'
       totals.set(key, (totals.get(key) ?? 0) + Number(t.amount ?? 0))
     }
 
-    const palette = [
-      '#ef4444',
-      '#f97316',
-      '#eab308',
-      '#22c55e',
-      '#06b6d4',
-      '#3b82f6',
-      '#8b5cf6',
-      '#ec4899',
-      '#64748b',
-    ]
+    const palette =
+      financialMode === 'income'
+        ? ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0', '#059669', '#22c55e', '#14b8a6', '#0ea5e9', '#64748b']
+        : ['#ef4444', '#f97316', '#eab308', '#fb7185', '#f43f5e', '#f59e0b', '#64748b', '#a855f7', '#0ea5e9']
 
     return Array.from(totals.entries())
       .map(([name, value], idx) => ({ name, value, color: palette[idx % palette.length] }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 8)
-  }, [transactions])
+  }, [financialMode, transactions])
+
+  const financialCounterpartyData = useMemo(() => {
+    const totals = new Map<string, number>()
+
+    for (const t of transactions) {
+      if (t.type !== financialMode) continue
+      const customerName = t.customer_id ? customersById.get(t.customer_id)?.name : undefined
+      const payee = String(t.payee ?? '').trim()
+      const key =
+        financialMode === 'income'
+          ? (customerName ?? payee ?? '').trim() || 'Belirtilmemiş'
+          : (payee || customerName || 'Belirtilmemiş')
+
+      totals.set(key, (totals.get(key) ?? 0) + Number(t.amount ?? 0))
+    }
+
+    return Array.from(totals.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5)
+  }, [customersById, financialMode, transactions])
 
   const recentTransactions = useMemo(() => {
     return transactions.slice(0, 10)
   }, [transactions])
+
+  function FinancialBreakdownCard() {
+    const isIncome = financialMode === 'income'
+    const accent = isIncome ? '#10b981' : '#ef4444'
+    const segmentedBase = isIncome ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-red-500/10 text-red-700 dark:text-red-300'
+    const segmentedActive = isIncome ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
+
+    return (
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle>Finansal Dağılım</CardTitle>
+
+          <div className="flex items-center rounded-lg bg-muted/60 p-1">
+            <button
+              type="button"
+              onClick={() => setFinancialMode('income')}
+              className={cn(
+                'h-8 px-3 rounded-md text-sm font-medium transition-colors',
+                financialMode === 'income' ? segmentedActive : segmentedBase
+              )}
+            >
+              Gelir
+            </button>
+            <button
+              type="button"
+              onClick={() => setFinancialMode('expense')}
+              className={cn(
+                'h-8 px-3 rounded-md text-sm font-medium transition-colors',
+                financialMode === 'expense' ? segmentedActive : segmentedBase
+              )}
+            >
+              Gider
+            </button>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          <Tabs defaultValue="categories" className="w-full">
+            <TabsList className="w-full sm:w-auto">
+              <TabsTrigger value="categories">Kategoriler</TabsTrigger>
+              <TabsTrigger value="payees">Cariler</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="categories" className="mt-4">
+              {financialCategoryData.length === 0 ? (
+                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  <p className="text-sm">Görüntülenecek veri yok</p>
+                </div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={financialCategoryData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={2}
+                        dataKey="value"
+                        stroke="none"
+                        strokeWidth={0}
+                      >
+                        {financialCategoryData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+                    </PieChart>
+                  </ResponsiveContainer>
+
+                  <div className="mt-4 space-y-2">
+                    {financialCategoryData.map((item) => (
+                      <div key={item.name} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+                          <span className="text-muted-foreground truncate">{item.name}</span>
+                        </div>
+                        <span className="font-medium tabular-nums">{formatCurrency(item.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="payees" className="mt-4">
+              {financialCounterpartyData.length === 0 ? (
+                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  <p className="text-sm">Görüntülenecek veri yok</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={financialCounterpartyData} layout="vertical" margin={{ left: 8, right: 36 }}>
+                    <CartesianGrid vertical={true} horizontal={false} strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis type="number" axisLine={false} tickLine={false} className="text-xs" />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      axisLine={false}
+                      tickLine={false}
+                      width={140}
+                      className="text-xs"
+                      tickFormatter={(v) => {
+                        const s = String(v)
+                        return s.length > 20 ? `${s.slice(0, 20)}…` : s
+                      }}
+                    />
+                    <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+                    <Bar dataKey="value" fill={accent} barSize={20} radius={[0, 4, 4, 0]}>
+                      <LabelList
+                        dataKey="value"
+                        position="right"
+                        className="fill-foreground"
+                        formatter={(v: any) => formatCurrency(Number(v))}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <AppLayout title="Dashboard" headerRight={headerRight}>
@@ -564,7 +727,7 @@ export function DashboardPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Bekleyen Borç
+                Bekleyen Alacak
               </CardTitle>
               <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900/20 flex items-center justify-center">
                 <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
@@ -595,21 +758,41 @@ export function DashboardPage() {
                 <ResponsiveContainer width="100%" height={300}>
                   <AreaChart data={incomeExpenseData}>
                     <defs>
-                      <linearGradient id="colorGelir" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.45} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
                       </linearGradient>
-                      <linearGradient id="colorGider" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                      <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.45} />
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0.02} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="month" className="text-xs" />
-                    <YAxis className="text-xs" />
+
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} className="text-xs" />
+                    <YAxis axisLine={false} tickLine={false} className="text-xs" />
                     <Tooltip />
-                    <Area type="monotone" dataKey="gelir" stroke="#10b981" fillOpacity={1} fill="url(#colorGelir)" />
-                    <Area type="monotone" dataKey="gider" stroke="#ef4444" fillOpacity={1} fill="url(#colorGider)" />
+
+                    <Area
+                      type="monotone"
+                      dataKey="gelir"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      fill="url(#incomeGradient)"
+                      fillOpacity={1}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="gider"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      fill="url(#expenseGradient)"
+                      fillOpacity={1}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
@@ -675,52 +858,7 @@ export function DashboardPage() {
 
         {/* Bottom Row */}
         <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Gider Kategorileri</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {expenseCategoryData.length === 0 ? (
-                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                  <p className="text-sm">Görüntülenecek veri yok</p>
-                </div>
-              ) : (
-                <>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={expenseCategoryData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={90}
-                        paddingAngle={2}
-                        dataKey="value"
-                        stroke="none"
-                        strokeWidth={0}
-                      >
-                        {expenseCategoryData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="mt-4 space-y-2">
-                    {expenseCategoryData.map((item) => (
-                      <div key={item.name} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <div className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
-                          <span className="text-muted-foreground">{item.name}</span>
-                        </div>
-                        <span className="font-medium">₺{item.value.toLocaleString('tr-TR')}</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+          <FinancialBreakdownCard />
 
           <Tabs defaultValue="transactions">
             <Card>
@@ -751,7 +889,8 @@ export function DashboardPage() {
                         return (
                           <div
                             key={t.id}
-                            className="flex items-center justify-between border-b border-border pb-4 last:border-0 last:pb-0"
+                            className="group flex items-center justify-between gap-3 rounded-md border-b border-border pb-4 last:border-0 last:pb-0 cursor-pointer hover:bg-muted/30"
+                            onClick={() => navigate(`/finans?editId=${t.id}`)}
                           >
                             <div className="space-y-1">
                               <p className="text-sm font-medium">
@@ -760,13 +899,16 @@ export function DashboardPage() {
                               </p>
                               <p className="text-xs text-muted-foreground">{formatShortDate(t.transaction_date)}</p>
                             </div>
-                            <div
-                              className={cn(
-                                'text-sm font-semibold tabular-nums',
-                                isIncome ? 'text-green-600' : 'text-red-600'
-                              )}
-                            >
-                              {isIncome ? '+' : '-'} {formatCurrency(amount)}
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={cn(
+                                  'text-sm font-semibold tabular-nums',
+                                  isIncome ? 'text-green-600' : 'text-red-600'
+                                )}
+                              >
+                                {isIncome ? '+' : '-'} {formatCurrency(amount)}
+                              </div>
+                              <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                             </div>
                           </div>
                         )
@@ -794,15 +936,22 @@ export function DashboardPage() {
                             const due = parseISO(inv.due_date)
                             const days = Math.max(1, differenceInCalendarDays(startOfDay(new Date()), due))
                             return (
-                              <div key={inv.id} className="flex items-center justify-between gap-3">
+                              <div
+                                key={inv.id}
+                                className="group flex items-center justify-between gap-3 rounded-md px-2 py-1 cursor-pointer hover:bg-muted/30"
+                                onClick={() => navigate(`/faturalar?open=${inv.id}`)}
+                              >
                                 <div className="min-w-0">
                                   <div className="text-sm font-medium truncate">{customerName}</div>
                                   <div className="text-xs text-muted-foreground">
                                     Vade: {formatShortDate(inv.due_date)} • {days} gün gecikti
                                   </div>
                                 </div>
-                                <div className="text-sm font-semibold tabular-nums text-red-600">
-                                  {formatCurrency(Number(inv.total_amount ?? 0))}
+                                <div className="flex items-center gap-2">
+                                  <div className="text-sm font-semibold tabular-nums text-red-600">
+                                    {formatCurrency(Number(inv.total_amount ?? 0))}
+                                  </div>
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                                 </div>
                               </div>
                             )
@@ -818,15 +967,22 @@ export function DashboardPage() {
                             const due = parseISO(inv.due_date)
                             const daysLeft = Math.max(0, differenceInCalendarDays(due, startOfDay(new Date())))
                             return (
-                              <div key={inv.id} className="flex items-center justify-between gap-3">
+                              <div
+                                key={inv.id}
+                                className="group flex items-center justify-between gap-3 rounded-md px-2 py-1 cursor-pointer hover:bg-muted/30"
+                                onClick={() => navigate(`/faturalar?open=${inv.id}`)}
+                              >
                                 <div className="min-w-0">
                                   <div className="text-sm font-medium truncate">{customerName}</div>
                                   <div className="text-xs text-muted-foreground">
                                     Vade: {formatShortDate(inv.due_date)} • {daysLeft} gün kaldı
                                   </div>
                                 </div>
-                                <div className="text-sm font-semibold tabular-nums text-orange-600">
-                                  {formatCurrency(Number(inv.total_amount ?? 0))}
+                                <div className="flex items-center gap-2">
+                                  <div className="text-sm font-semibold tabular-nums text-orange-600">
+                                    {formatCurrency(Number(inv.total_amount ?? 0))}
+                                  </div>
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                                 </div>
                               </div>
                             )

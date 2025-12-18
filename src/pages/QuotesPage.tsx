@@ -34,7 +34,7 @@ import {
   subMonths,
 } from 'date-fns'
 import { tr } from 'date-fns/locale'
-import { ArrowRightLeft, Calendar as CalendarIcon, Copy, ExternalLink, Pencil, Plus, Search, Share2, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, Calendar as CalendarIcon, Copy, ExternalLink, MessageCircle, Pencil, Plus, Search, Share2, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
@@ -455,6 +455,54 @@ export function QuotesPage() {
                                       >
                                         <ExternalLink className="h-4 w-4" />
                                         Önizle
+                                      </DropdownMenu.Item>
+
+                                      <DropdownMenu.Item
+                                        className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+                                        onSelect={() => {
+                                          if (!q.token) return
+                                          
+                                          const customer = customersById.get(q.customer_id)
+                                          if (!customer?.phone) {
+                                            toast({
+                                              title: 'Telefon numarası bulunamadı',
+                                              description: 'Müşterinin telefon numarası kayıtlı değil.',
+                                              variant: 'destructive',
+                                            })
+                                            return
+                                          }
+
+                                          // Clean phone number (remove spaces, parentheses, dashes)
+                                          const rawPhone = String(customer.phone ?? '')
+                                          let cleanPhone = rawPhone.replace(/\D/g, '')
+                                          while (cleanPhone.startsWith('0')) {
+                                            cleanPhone = cleanPhone.substring(1)
+                                          }
+                                          if (cleanPhone.length === 10) {
+                                            cleanPhone = `90${cleanPhone}`
+                                          }
+                                          if (!cleanPhone) {
+                                            toast({
+                                              title: 'Hata',
+                                              description: 'Müşteri telefon numarası eksik',
+                                              variant: 'destructive',
+                                            })
+                                            return
+                                          }
+                                          
+                                          // Construct WhatsApp message with quote link
+                                          const fullUrl = `${window.location.origin}/p/quote/${q.token}`
+                                          const message = `Merhaba, teklifinizi aşağıdaki linkten inceleyebilirsiniz: ${fullUrl}`
+                                          
+                                          // Construct WhatsApp URL
+                                          const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`
+                                          
+                                          // Open in new tab
+                                          window.open(whatsappUrl, '_blank')
+                                        }}
+                                      >
+                                        <MessageCircle className="h-4 w-4 text-green-600" />
+                                        WhatsApp'tan Gönder
                                       </DropdownMenu.Item>
                                     </DropdownMenu.Content>
                                   </DropdownMenu.Portal>

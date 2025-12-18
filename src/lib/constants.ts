@@ -30,6 +30,7 @@ export const TRANSACTION_CATEGORIES = {
 export const INVOICE_STATUSES = {
   DRAFT: 'draft',
   SENT: 'sent',
+  PENDING: 'pending',
   PAID: 'paid',
   CANCELLED: 'cancelled',
 } as const
@@ -37,6 +38,7 @@ export const INVOICE_STATUSES = {
 export const INVOICE_STATUS_LABELS = {
   draft: 'Taslak',
   sent: 'Gönderildi',
+  pending: 'Bekliyor',
   paid: 'Ödendi',
   cancelled: 'İptal',
 } as const

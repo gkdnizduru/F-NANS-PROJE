@@ -1235,6 +1235,30 @@ export function useUpdateInvoice() {
   })
 }
 
+export function useUpdateInvoiceStatus() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; status: Tables['invoices']['Row']['status'] }) => {
+      const { data, error } = await supabase
+        .from('invoices')
+        .update({ status: payload.status })
+        .eq('id', payload.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['customer_invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard_invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard_action_invoices'] })
+    },
+  })
+}
+
 export function useDeleteInvoice() {
   const queryClient = useQueryClient()
 
@@ -1334,6 +1358,28 @@ export function useCustomers() {
       
       if (error) throw error
       return data ?? []
+    },
+  })
+}
+
+export function useConvertLeadToCustomer() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; name: string }) => {
+      const { data, error } = await supabase
+        .from('customers')
+        .update({ customer_status: 'customer' })
+        .eq('id', payload.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: async (_data, vars) => {
+      await queryClient.invalidateQueries({ queryKey: ['customers'] })
+      await logActivity(`${vars.name} adlı aday müşteri, müşteriye dönüştürüldü`)
     },
   })
 }

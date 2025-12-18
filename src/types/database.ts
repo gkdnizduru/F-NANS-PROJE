@@ -147,6 +147,7 @@ export interface Database {
           user_id: string
           name: string
           type: 'individual' | 'corporate'
+          customer_status: 'customer' | 'lead'
           email: string | null
           phone: string | null
           address: string | null
@@ -161,6 +162,7 @@ export interface Database {
           user_id: string
           name: string
           type: 'individual' | 'corporate'
+          customer_status?: 'customer' | 'lead'
           email?: string | null
           phone?: string | null
           address?: string | null
@@ -175,6 +177,7 @@ export interface Database {
           user_id?: string
           name?: string
           type?: 'individual' | 'corporate'
+          customer_status?: 'customer' | 'lead'
           email?: string | null
           phone?: string | null
           address?: string | null
@@ -250,6 +253,7 @@ export interface Database {
           type: 'income' | 'expense'
           amount: number
           category: string
+          payee: string | null
           description: string | null
           transaction_date: string
           customer_id: string | null
@@ -263,6 +267,7 @@ export interface Database {
           type: 'income' | 'expense'
           amount: number
           category: string
+          payee?: string | null
           description?: string | null
           transaction_date: string
           customer_id?: string | null
@@ -276,6 +281,7 @@ export interface Database {
           type?: 'income' | 'expense'
           amount?: number
           category?: string
+          payee?: string | null
           description?: string | null
           transaction_date?: string
           customer_id?: string | null
@@ -491,14 +497,13 @@ export interface Database {
           invoice_number: string
           invoice_date: string
           due_date: string
-          status: 'draft' | 'sent' | 'paid' | 'cancelled'
+          status: 'draft' | 'sent' | 'pending' | 'paid' | 'cancelled'
           subtotal: number
           tax_amount: number
           total_amount: number
-          token: string | null
           notes: string | null
+          token: string | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
@@ -507,14 +512,13 @@ export interface Database {
           invoice_number: string
           invoice_date: string
           due_date: string
-          status?: 'draft' | 'sent' | 'paid' | 'cancelled'
-          subtotal: number
-          tax_amount: number
-          total_amount: number
-          token?: string | null
+          status?: 'draft' | 'sent' | 'pending' | 'paid' | 'cancelled'
+          subtotal?: number
+          tax_amount?: number
+          total_amount?: number
           notes?: string | null
+          token?: string | null
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
@@ -523,21 +527,20 @@ export interface Database {
           invoice_number?: string
           invoice_date?: string
           due_date?: string
-          status?: 'draft' | 'sent' | 'paid' | 'cancelled'
+          status?: 'draft' | 'sent' | 'pending' | 'paid' | 'cancelled'
           subtotal?: number
           tax_amount?: number
           total_amount?: number
-          token?: string | null
           notes?: string | null
+          token?: string | null
           created_at?: string
-          updated_at?: string
         }
         Relationships: []
       }
       payments: {
         Row: {
           id: string
-          user_id: string
+          user_id: string | null
           invoice_id: string
           amount: number
           payment_date: string
@@ -547,7 +550,7 @@ export interface Database {
         }
         Insert: {
           id?: string
-          user_id?: string
+          user_id?: string | null
           invoice_id: string
           amount: number
           payment_date: string
@@ -557,7 +560,7 @@ export interface Database {
         }
         Update: {
           id?: string
-          user_id?: string
+          user_id?: string | null
           invoice_id?: string
           amount?: number
           payment_date?: string

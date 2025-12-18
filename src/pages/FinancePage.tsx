@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AppLayout } from '../components/layout/AppLayout'
 import { TransactionForm } from '../components/forms/TransactionForm'
 import {
@@ -34,6 +34,7 @@ import {
 } from 'date-fns'
 import { tr } from 'date-fns/locale'
 import { Calendar as CalendarIcon, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 
 type TransactionRow = Database['public']['Tables']['transactions']['Row']
 
@@ -44,6 +45,8 @@ type DateRange = {
 
 export function FinancePage() {
   const now = new Date()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const editIdParam = searchParams.get('editId')
   const [open, setOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState<TransactionRow | null>(null)
   const [deletingTransaction, setDeletingTransaction] = useState<TransactionRow | null>(null)
@@ -101,6 +104,29 @@ export function FinancePage() {
       )
     })
   }, [accountsById, customersById, searchQuery, transactions])
+
+  useEffect(() => {
+    if (!editIdParam) return
+    if (open && editingTransaction?.id === editIdParam) return
+
+    const match = transactions.find((t) => t.id === editIdParam)
+    if (match) {
+      setEditingTransaction(match)
+      setOpen(true)
+      return
+    }
+
+    if (!transactionsQuery.isLoading && !transactionsQuery.isFetching) {
+      toast({
+        title: 'İşlem bulunamadı',
+        description: 'Seçilen işlem bulunamadı veya erişiminiz yok.',
+        variant: 'destructive',
+      })
+      const next = new URLSearchParams(searchParams)
+      next.delete('editId')
+      setSearchParams(next, { replace: true })
+    }
+  }, [editIdParam, editingTransaction?.id, open, searchParams, setSearchParams, transactions, transactionsQuery.isFetching, transactionsQuery.isLoading])
 
   return (
     <AppLayout title="Finans">
@@ -231,7 +257,14 @@ export function FinancePage() {
                 open={open}
                 onOpenChange={(v) => {
                   setOpen(v)
-                  if (!v) setEditingTransaction(null)
+                  if (!v) {
+                    setEditingTransaction(null)
+                    if (searchParams.get('editId')) {
+                      const next = new URLSearchParams(searchParams)
+                      next.delete('editId')
+                      setSearchParams(next, { replace: true })
+                    }
+                  }
                 }}
               >
                 <Button
@@ -255,6 +288,11 @@ export function FinancePage() {
                         title: editingTransaction ? 'İşlem güncellendi' : 'İşlem oluşturuldu',
                       })
                       setEditingTransaction(null)
+                      if (searchParams.get('editId')) {
+                        const next = new URLSearchParams(searchParams)
+                        next.delete('editId')
+                        setSearchParams(next, { replace: true })
+                      }
                     }}
                   />
                 </DialogContent>

@@ -32,6 +32,7 @@ const transactionSchema = z.object({
   date: z.date(),
   accountId: z.string().min(1, 'Hesap seçimi zorunludur'),
   category: z.string().min(1, 'Kategori zorunludur'),
+  payee: z.string().optional(),
   customerId: z.string().optional(),
   description: z.string().optional(),
 })
@@ -68,6 +69,7 @@ export function TransactionForm({ initialTransaction, onSuccess }: TransactionFo
         date,
         accountId: initialTransaction?.bank_account ?? '',
         category: initialTransaction?.category ?? '',
+        payee: initialTransaction?.payee ?? '',
         customerId: initialTransaction?.customer_id ?? undefined,
         description: initialTransaction?.description ?? '',
       }
@@ -111,6 +113,8 @@ export function TransactionForm({ initialTransaction, onSuccess }: TransactionFo
   const onSubmit = async (values: TransactionFormValues) => {
     if (!user) return
 
+    const payee = values.type === 'expense' ? values.payee?.trim() || null : null
+
     if (isEditing && initialTransaction?.id) {
       await updateTransaction.mutateAsync({
         id: initialTransaction.id,
@@ -118,6 +122,7 @@ export function TransactionForm({ initialTransaction, onSuccess }: TransactionFo
           type: values.type,
           amount: values.amount,
           category: values.category,
+          payee,
           description: values.description?.trim() || null,
           transaction_date: format(values.date, 'yyyy-MM-dd'),
           customer_id: values.customerId || null,
@@ -130,6 +135,7 @@ export function TransactionForm({ initialTransaction, onSuccess }: TransactionFo
         type: values.type,
         amount: values.amount,
         category: values.category,
+        payee,
         description: values.description?.trim() || null,
         transaction_date: format(values.date, 'yyyy-MM-dd'),
         customer_id: values.customerId || null,
@@ -275,6 +281,13 @@ export function TransactionForm({ initialTransaction, onSuccess }: TransactionFo
           />
         </div>
       </div>
+
+      {type === 'expense' ? (
+        <div className="space-y-2">
+          <Label htmlFor="payee">Ödenen Kişi/Firma</Label>
+          <Input id="payee" placeholder="Örn: Lila Kafe" {...register('payee')} />
+        </div>
+      ) : null}
 
       <div className="space-y-2">
         <Label htmlFor="description">Açıklama</Label>

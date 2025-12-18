@@ -9,7 +9,7 @@ type PublicInvoicePayload = {
     invoice_number: string
     invoice_date: string
     due_date: string
-    status: 'draft' | 'sent' | 'paid' | 'cancelled'
+    status: 'draft' | 'sent' | 'pending' | 'paid' | 'cancelled'
     subtotal: number
     tax_amount: number
     total_amount: number

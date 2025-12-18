@@ -15,10 +15,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog'
 import { Input } from '../components/ui/input'
 import { Skeleton } from '../components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { toast } from '../components/ui/use-toast'
-import { useCustomers, useDeleteCustomer, useDeleteCustomerCascade } from '../hooks/useSupabaseQuery'
+import { useCustomers, useDeleteCustomer, useDeleteCustomerCascade, useConvertLeadToCustomer } from '../hooks/useSupabaseQuery'
 import type { Database } from '../types/database'
-import { Building2, ChevronRight, Pencil, Plus, Search, Trash2, User } from 'lucide-react'
+import { Building2, ChevronRight, Pencil, Plus, Search, Trash2, User, UserCheck } from 'lucide-react'
 
 type CustomerRow = Database['public']['Tables']['customers']['Row']
 
@@ -30,23 +31,42 @@ export function CustomersPage() {
   const [deletingCustomer, setDeletingCustomer] = useState<CustomerRow | null>(null)
   const [cascadeDeletingCustomer, setCascadeDeletingCustomer] = useState<CustomerRow | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [activeTab, setActiveTab] = useState<'customer' | 'lead'>('customer')
   const customersQuery = useCustomers()
   const deleteCustomer = useDeleteCustomer()
   const deleteCustomerCascade = useDeleteCustomerCascade()
+  const convertLead = useConvertLeadToCustomer()
 
   const customers = customersQuery.data ?? []
 
   const filteredCustomers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    if (!q) return customers
+    let filtered = customers.filter((c) => (c.customer_status || 'customer') === activeTab)
+    
+    if (q) {
+      filtered = filtered.filter((c) => {
+        const name = String(c.name ?? '').toLowerCase()
+        const email = String(c.email ?? '').toLowerCase()
+        const phone = String(c.phone ?? '').toLowerCase()
+        return name.includes(q) || email.includes(q) || phone.includes(q)
+      })
+    }
+    
+    return filtered
+  }, [customers, searchQuery, activeTab])
 
-    return customers.filter((c) => {
-      const name = String(c.name ?? '').toLowerCase()
-      const email = String(c.email ?? '').toLowerCase()
-      const phone = String(c.phone ?? '').toLowerCase()
-      return name.includes(q) || email.includes(q) || phone.includes(q)
-    })
-  }, [customers, searchQuery])
+  const handleConvertLead = async (customer: CustomerRow) => {
+    try {
+      await convertLead.mutateAsync({ id: customer.id, name: customer.name })
+      toast({ title: 'Aday müşteri, müşteriye dönüştürüldü' })
+    } catch (e: any) {
+      toast({
+        title: 'Dönüştürme başarısız',
+        description: e?.message || 'Bilinmeyen hata',
+        variant: 'destructive',
+      })
+    }
+  }
 
   useEffect(() => {
     const state = (location.state ?? {}) as any
@@ -68,7 +88,14 @@ export function CustomersPage() {
           </p>
         </div>
 
-        {/* Table */}
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'customer' | 'lead')}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="customer">Müşteriler</TabsTrigger>
+            <TabsTrigger value="lead">Aday Müşteriler</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value={activeTab}>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle className="whitespace-nowrap">Müşteri Listesi</CardTitle>
@@ -97,7 +124,7 @@ export function CustomersPage() {
                     }}
                   >
                     <Plus className="mr-2 h-4 w-4" />
-                    Müşteri Ekle
+                    {activeTab === 'lead' ? 'Aday Müşteri Ekle' : 'Müşteri Ekle'}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
@@ -106,10 +133,11 @@ export function CustomersPage() {
                   </DialogHeader>
                   <CustomerForm
                     initialCustomer={editingCustomer ?? undefined}
+                    defaultCustomerStatus={activeTab}
                     onSuccess={() => {
                       setOpen(false)
                       toast({
-                        title: editingCustomer ? 'Müşteri güncellendi' : 'Müşteri oluşturuldu',
+                        title: editingCustomer ? 'Müşteri güncellendi' : (activeTab === 'lead' ? 'Aday müşteri oluşturuldu' : 'Müşteri oluşturuldu'),
                       })
                       setEditingCustomer(null)
                     }}
@@ -192,6 +220,17 @@ export function CustomersPage() {
                         <td className="p-4">{customer.email || '-'}</td>
                         <td className="p-4 text-right">
                           <div className="flex justify-end gap-2">
+                            {activeTab === 'lead' && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleConvertLead(customer)}
+                                disabled={convertLead.isPending}
+                              >
+                                <UserCheck className="mr-2 h-4 w-4" />
+                                Müşteriye Dönüştür
+                              </Button>
+                            )}
                             <Button
                               variant="outline"
                               size="sm"
@@ -222,6 +261,8 @@ export function CustomersPage() {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
+        </Tabs>
 
         <AlertDialog
           open={Boolean(deletingCustomer)}

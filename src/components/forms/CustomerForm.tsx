@@ -44,6 +44,7 @@ type CustomerFormValues = z.infer<typeof customerSchema>
 
 type CustomerFormProps = {
   initialCustomer?: Database['public']['Tables']['customers']['Row']
+  defaultCustomerStatus?: 'customer' | 'lead'
   onSuccess?: () => void
 }
 
@@ -56,7 +57,7 @@ function splitName(fullName: string) {
   }
 }
 
-export function CustomerForm({ initialCustomer, onSuccess }: CustomerFormProps) {
+export function CustomerForm({ initialCustomer, defaultCustomerStatus, onSuccess }: CustomerFormProps) {
   const { user } = useAuth()
   const createCustomer = useCreateCustomer()
   const updateCustomer = useUpdateCustomer()
@@ -131,6 +132,7 @@ export function CustomerForm({ initialCustomer, onSuccess }: CustomerFormProps) 
         user_id: user.id,
         name,
         type: values.kind,
+        customer_status: defaultCustomerStatus || 'customer',
         phone: values.phone?.trim() || null,
         email: values.email?.trim() || null,
         tax_number: values.kind === 'corporate' ? values.taxNumber?.trim() || null : null,
