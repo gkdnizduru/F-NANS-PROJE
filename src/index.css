@@ -80,12 +80,15 @@
   #printable-invoice,
   #printable-invoice *,
   #invoice-content,
-  #invoice-content * {
+  #invoice-content *,
+  #printable-voucher,
+  #printable-voucher * {
     visibility: visible !important;
   }
 
   #printable-invoice,
-  #invoice-content {
+  #invoice-content,
+  #printable-voucher {
     position: fixed !important;
     left: 50% !important;
     top: 0 !important;

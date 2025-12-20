@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Checkbox } from '../components/ui/checkbox'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog'
 import { Input } from '../components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Textarea } from '../components/ui/textarea'
@@ -14,12 +15,17 @@ import { cn } from '../lib/utils'
 import { formatCurrency, formatShortDate } from '../lib/format'
 import { INVOICE_STATUS_LABELS } from '../lib/constants'
 import {
+  type CustomerTransactionType,
   useCustomer,
   useCustomerActivities,
   useCustomerDeals,
   useCustomerInvoices,
   useCustomerQuotes,
   useCustomerNotes,
+  useCustomerTransactions,
+  useCreateCustomerTransaction,
+  useUpdateCustomerTransaction,
+  useDeleteCustomerTransaction,
   useCreateNote,
   useUpdateNote,
   useDeleteNote,
@@ -29,6 +35,7 @@ import {
   useDeleteActivity,
   useToggleActivityCompleted,
 } from '../hooks/useSupabaseQuery'
+import { UnifiedDatePicker } from '../components/shared/UnifiedDatePicker'
 import { AddActivityDialog } from '../components/activities/AddActivityDialog'
 import {
   AlertDialog,
@@ -177,6 +184,10 @@ export function CustomerDetail() {
   const invoicesQuery = useCustomerInvoices(customerId)
   const dealsQuery = useCustomerDeals(customerId)
   const quotesQuery = useCustomerQuotes(customerId)
+  const customerTransactionsQuery = useCustomerTransactions(customerId)
+  const createCustomerTransaction = useCreateCustomerTransaction()
+  const updateCustomerTransaction = useUpdateCustomerTransaction()
+  const deleteCustomerTransaction = useDeleteCustomerTransaction()
   const activitiesQuery = useCustomerActivities(customerId ?? undefined)
   const notesQuery = useCustomerNotes(customerId)
   const createNote = useCreateNote()
@@ -198,6 +209,22 @@ export function CustomerDetail() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [uploadingFilesCount, setUploadingFilesCount] = useState(0)
+
+  const [addTransactionOpen, setAddTransactionOpen] = useState(false)
+  const [txType, setTxType] = useState<CustomerTransactionType>('debt')
+  const [txDate, setTxDate] = useState<Date>(() => new Date())
+  const [txAmount, setTxAmount] = useState<number>(0)
+  const [txDescription, setTxDescription] = useState<string>('')
+
+  const [editingTransaction, setEditingTransaction] = useState<any | null>(null)
+  const [editTransactionOpen, setEditTransactionOpen] = useState(false)
+  const [deleteTransactionOpen, setDeleteTransactionOpen] = useState(false)
+  const [deletingTransaction, setDeletingTransaction] = useState<any | null>(null)
+
+  const [editTxType, setEditTxType] = useState<CustomerTransactionType>('debt')
+  const [editTxDate, setEditTxDate] = useState<Date>(() => new Date())
+  const [editTxAmount, setEditTxAmount] = useState<number>(0)
+  const [editTxDescription, setEditTxDescription] = useState<string>('')
 
   const activities = activitiesQuery.data ?? []
   const editingActivity = useMemo(() => {
@@ -312,6 +339,16 @@ export function CustomerDetail() {
   const invoices = invoicesQuery.data ?? []
   const deals = dealsQuery.data ?? []
   const quotes = quotesQuery.data ?? []
+  const customerTransactions = customerTransactionsQuery.data ?? []
+
+  const handleStartEditTransaction = (t: any) => {
+    setEditingTransaction(t)
+    setEditTxType(String(t?.transaction_type) === 'credit' ? 'credit' : 'debt')
+    setEditTxDate(t?.transaction_date ? new Date(t.transaction_date) : new Date())
+    setEditTxAmount(Number(t?.amount ?? 0))
+    setEditTxDescription(String(t?.description ?? ''))
+    setEditTransactionOpen(true)
+  }
 
   const stats = useMemo(() => {
     const totalRevenue = invoices
@@ -326,18 +363,28 @@ export function CustomerDetail() {
       .reduce((acc, inv: any) => acc + Number(inv.total_amount ?? 0), 0)
     const activeDeals = deals.filter((d: any) => d.stage !== 'won' && d.stage !== 'lost').length
 
+    const totalDebt = customerTransactions
+      .filter((t: any) => String(t?.transaction_type) === 'debt')
+      .reduce((acc: number, t: any) => acc + Number(t?.amount ?? 0), 0)
+    const totalCredit = customerTransactions
+      .filter((t: any) => String(t?.transaction_type) === 'credit')
+      .reduce((acc: number, t: any) => acc + Number(t?.amount ?? 0), 0)
+    const balance = totalDebt - totalCredit
+
     return {
       totalRevenue,
       openInvoiceTotal,
       activeDeals,
+      balance,
     }
-  }, [deals, invoices])
+  }, [customerTransactions, deals, invoices])
 
   const isLoading =
     customerQuery.isLoading ||
     invoicesQuery.isLoading ||
     dealsQuery.isLoading ||
     quotesQuery.isLoading ||
+    customerTransactionsQuery.isLoading ||
     activitiesQuery.isLoading ||
     notesQuery.isLoading ||
     filesQuery.isLoading
@@ -414,7 +461,7 @@ export function CustomerDetail() {
               <div className="grid gap-3 sm:grid-cols-3 lg:w-[520px]">
                 <StatCard title="Toplam Ciro" value={formatCurrency(stats.totalRevenue)} />
                 <StatCard title="Açık Fatura" value={formatCurrency(stats.openInvoiceTotal)} />
-                <StatCard title="Aktif Fırsatlar" value={String(stats.activeDeals)} />
+                <StatCard title="Toplam Bakiye" value={formatCurrency(stats.balance)} />
               </div>
             </div>
           )}
@@ -425,6 +472,10 @@ export function CustomerDetail() {
             <TabsTrigger value="overview" className="gap-2">
               <User className="h-4 w-4" />
               Genel Bakış
+            </TabsTrigger>
+            <TabsTrigger value="transactions" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Hesap Hareketleri
             </TabsTrigger>
             <TabsTrigger value="invoices" className="gap-2">
               <Receipt className="h-4 w-4" />
@@ -480,6 +531,341 @@ export function CustomerDetail() {
                 ) : (
                   <div className="text-sm text-muted-foreground">Veri yok</div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="transactions">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle>Hesap Hareketleri</CardTitle>
+
+                <Dialog
+                  open={addTransactionOpen}
+                  onOpenChange={(v) => {
+                    setAddTransactionOpen(v)
+                    if (!v) {
+                      setTxType('debt')
+                      setTxDate(new Date())
+                      setTxAmount(0)
+                      setTxDescription('')
+                    }
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button type="button" className="gap-2" disabled={!customerId}>
+                      <Plus className="h-4 w-4" />
+                      İşlem Ekle
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[520px]">
+                    <DialogHeader>
+                      <DialogTitle>İşlem Ekle</DialogTitle>
+                    </DialogHeader>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">İşlem Tipi</div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Button
+                            type="button"
+                            variant={txType === 'debt' ? 'default' : 'outline'}
+                            onClick={() => setTxType('debt')}
+                          >
+                            Borç Ekle
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={txType === 'credit' ? 'default' : 'outline'}
+                            onClick={() => setTxType('credit')}
+                          >
+                            Tahsilat/Alacak Ekle
+                          </Button>
+                        </div>
+                      </div>
+
+                      <UnifiedDatePicker value={txDate} onChange={(d) => d && setTxDate(d)} label="Tarih" />
+
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Tutar</div>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={String(txAmount)}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setTxAmount(v === '' ? 0 : Number(v))
+                          }}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Açıklama</div>
+                        <Input value={txDescription} onChange={(e) => setTxDescription(e.target.value)} placeholder='Örn: Devir Bakiyesi' />
+                      </div>
+
+                      {(createCustomerTransaction.error as any)?.message ? (
+                        <p className="text-sm text-destructive">{(createCustomerTransaction.error as any)?.message}</p>
+                      ) : null}
+
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          disabled={
+                            createCustomerTransaction.isPending ||
+                            !customerId ||
+                            !txDescription.trim() ||
+                            !(Number(txAmount) > 0)
+                          }
+                          onClick={async () => {
+                            if (!customerId) return
+
+                            try {
+                              await createCustomerTransaction.mutateAsync({
+                                customer_id: customerId,
+                                transaction_type: txType,
+                                amount: Number(txAmount),
+                                transaction_date: format(txDate, 'yyyy-MM-dd'),
+                                description: txDescription.trim(),
+                                currency: 'TRY',
+                              })
+                              toast({ title: 'İşlem eklendi' })
+                              setAddTransactionOpen(false)
+                            } catch (e: any) {
+                              toast({ title: 'İşlem eklenemedi', description: e?.message, variant: 'destructive' })
+                            }
+                          }}
+                        >
+                          Kaydet
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : customerTransactionsQuery.isError ? (
+                  <div className="text-sm text-destructive">
+                    {(customerTransactionsQuery.error as any)?.message || 'Hareketler yüklenemedi'}
+                  </div>
+                ) : customerTransactions.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Bu müşteriye ait işlem yok.</div>
+                ) : (
+                  <div className="rounded-md border">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Tarih</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Açıklama</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">İşlem Tipi</th>
+                          <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Tutar</th>
+                          <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">İşlem</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {customerTransactions.map((t: any, idx: number) => {
+                          const type = String(t.transaction_type)
+                          const isDebt = type === 'debt'
+                          const badgeClass = isDebt
+                            ? 'border-transparent bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/20'
+                            : 'border-transparent bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/20'
+
+                          return (
+                            <tr key={t.id ?? `${t.transaction_date}-${t.amount}-${t.description}-${idx}`} className="border-b">
+                              <td className="p-4">{formatShortDate(t.transaction_date)}</td>
+                              <td className="p-4">{t.description}</td>
+                              <td className="p-4">
+                                <Badge variant="outline" className={badgeClass}>
+                                  {isDebt ? 'Borç' : 'Alacak'}
+                                </Badge>
+                              </td>
+                              <td className="p-4 text-right tabular-nums font-medium">{formatCurrency(Number(t.amount ?? 0))}</td>
+                              <td className="p-4 text-right">
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleStartEditTransaction(t)}
+                                  >
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Düzenle
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                      setDeletingTransaction(t)
+                                      setDeleteTransactionOpen(true)
+                                    }}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Sil
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <Dialog
+                  open={editTransactionOpen}
+                  onOpenChange={(v) => {
+                    setEditTransactionOpen(v)
+                    if (!v) {
+                      setEditingTransaction(null)
+                      setEditTxType('debt')
+                      setEditTxDate(new Date())
+                      setEditTxAmount(0)
+                      setEditTxDescription('')
+                    }
+                  }}
+                >
+                  <DialogContent className="sm:max-w-[520px]">
+                    <DialogHeader>
+                      <DialogTitle>İşlem Düzenle</DialogTitle>
+                    </DialogHeader>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">İşlem Tipi</div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Button
+                            type="button"
+                            variant={editTxType === 'debt' ? 'default' : 'outline'}
+                            onClick={() => setEditTxType('debt')}
+                          >
+                            Borç
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={editTxType === 'credit' ? 'default' : 'outline'}
+                            onClick={() => setEditTxType('credit')}
+                          >
+                            Alacak
+                          </Button>
+                        </div>
+                      </div>
+
+                      <UnifiedDatePicker value={editTxDate} onChange={(d) => d && setEditTxDate(d)} label="Tarih" />
+
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Tutar</div>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={String(editTxAmount)}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setEditTxAmount(v === '' ? 0 : Number(v))
+                          }}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Açıklama</div>
+                        <Input
+                          value={editTxDescription}
+                          onChange={(e) => setEditTxDescription(e.target.value)}
+                          placeholder="Örn: Elden Tahsilat"
+                        />
+                      </div>
+
+                      {(updateCustomerTransaction.error as any)?.message ? (
+                        <p className="text-sm text-destructive">{(updateCustomerTransaction.error as any)?.message}</p>
+                      ) : null}
+
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          disabled={
+                            updateCustomerTransaction.isPending ||
+                            !editingTransaction ||
+                            !editTxDescription.trim() ||
+                            !(Number(editTxAmount) > 0)
+                          }
+                          onClick={async () => {
+                            if (!editingTransaction) return
+                            if (!customerId) return
+
+                            try {
+                              await updateCustomerTransaction.mutateAsync({
+                                id: String(editingTransaction.id),
+                                patch: {
+                                  customer_id: customerId,
+                                  transaction_type: editTxType,
+                                  amount: Number(editTxAmount),
+                                  transaction_date: format(editTxDate, 'yyyy-MM-dd'),
+                                  description: editTxDescription.trim(),
+                                  currency: String(editingTransaction.currency ?? 'TRY'),
+                                },
+                              })
+                              toast({ title: 'İşlem güncellendi' })
+                              setEditTransactionOpen(false)
+                            } catch (e: any) {
+                              toast({ title: 'Güncellenemedi', description: e?.message, variant: 'destructive' })
+                            }
+                          }}
+                        >
+                          Kaydet
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                <AlertDialog open={deleteTransactionOpen} onOpenChange={(v) => setDeleteTransactionOpen(v)}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Silme Onayı</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Bu kaydı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel
+                        onClick={() => {
+                          setDeleteTransactionOpen(false)
+                          setDeletingTransaction(null)
+                        }}
+                      >
+                        Vazgeç
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        disabled={deleteCustomerTransaction.isPending || !deletingTransaction}
+                        onClick={async () => {
+                          if (!deletingTransaction) return
+                          if (!customerId) return
+
+                          try {
+                            await deleteCustomerTransaction.mutateAsync({
+                              id: String(deletingTransaction.id),
+                              customer_id: customerId,
+                            })
+                            toast({ title: 'Kayıt silindi' })
+                          } catch (e: any) {
+                            toast({ title: 'Silinemedi', description: e?.message, variant: 'destructive' })
+                          } finally {
+                            setDeleteTransactionOpen(false)
+                            setDeletingTransaction(null)
+                          }
+                        }}
+                      >
+                        Sil
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </CardContent>
             </Card>
           </TabsContent>

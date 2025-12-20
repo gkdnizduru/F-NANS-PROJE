@@ -12,8 +12,10 @@ import {
   ShoppingBag,
   Kanban,
   Calendar,
+  BedDouble,
   FileSignature,
   FileText,
+  Plane,
   Users,
   Settings,
   LogOut,
@@ -22,6 +24,7 @@ import {
   Moon,
   Menu,
   ChevronLeft,
+  ChevronDown,
 } from 'lucide-react'
 
 interface AppLayoutProps {
@@ -30,18 +33,64 @@ interface AppLayoutProps {
   headerRight?: React.ReactNode
 }
 
-const menuItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/kasa-banka', label: 'Kasa & Banka', icon: Wallet },
-  { path: '/finans', label: 'Finans', icon: Banknote },
-  { path: '/urun-hizmet', label: 'Ürün/Hizmet', icon: ShoppingBag },
-  { path: '/firsatlar', label: 'Fırsatlar', icon: Kanban },
-  { path: '/aktiviteler', label: 'Aktiviteler', icon: Calendar },
-  { path: '/teklifler', label: 'Teklifler', icon: FileSignature },
-  { path: '/faturalar', label: 'Faturalar', icon: FileText },
-  { path: '/musteriler', label: 'Müşteriler', icon: Users },
-  { path: '/ayarlar', label: 'Ayarlar', icon: Settings },
+type SidebarItem = {
+  path?: string
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  disabled?: boolean
+}
+
+type SidebarGroup = {
+  id: 'finance' | 'agency' | 'other'
+  title: string
+  defaultOpen: boolean
+  items: SidebarItem[]
+}
+
+const sidebarGroups: SidebarGroup[] = [
+  {
+    id: 'finance',
+    title: 'FİNANS & MUHASEBE',
+    defaultOpen: true,
+    items: [
+      { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/kasa-banka', label: 'Kasa & Banka', icon: Wallet },
+      { path: '/finans', label: 'Finans', icon: Banknote },
+      { path: '/firsatlar', label: 'Fırsatlar', icon: Kanban },
+      { path: '/teklifler', label: 'Teklifler', icon: FileSignature },
+      { path: '/faturalar', label: 'Faturalar', icon: FileText },
+      { path: '/musteriler', label: 'Müşteriler', icon: Users },
+      { path: '/urun-hizmet', label: 'Ürün/Hizmet', icon: ShoppingBag },
+    ],
+  },
+  {
+    id: 'agency',
+    title: 'ACENTE OPERASYON',
+    defaultOpen: false,
+    items: [
+      { path: '/agency/tickets', label: 'Biletleme (PNR)', icon: FileText },
+      { path: '/agency/hotels', label: 'Otel Yönetimi', icon: BedDouble },
+      { path: '/agency/reports/airlines', label: 'Havayolu Raporu', icon: Plane },
+      { path: '/agency/settings/airlines', label: 'Havayolu Tanımları', icon: Settings },
+      { label: 'Vize İşlemleri', icon: FileSignature, disabled: true },
+    ],
+  },
+  {
+    id: 'other',
+    title: 'DİĞER',
+    defaultOpen: true,
+    items: [
+      { path: '/aktiviteler', label: 'Aktiviteler', icon: Calendar },
+      { path: '/ayarlar', label: 'Ayarlar', icon: Settings },
+    ],
+  },
 ]
+
+const getDefaultOpenGroups = (): Record<SidebarGroup['id'], boolean> => ({
+  finance: sidebarGroups.find((g) => g.id === 'finance')?.defaultOpen ?? true,
+  agency: sidebarGroups.find((g) => g.id === 'agency')?.defaultOpen ?? false,
+  other: sidebarGroups.find((g) => g.id === 'other')?.defaultOpen ?? true,
+})
 
 export function AppLayout({ children, title = 'Dashboard', headerRight }: AppLayoutProps) {
   const { user, signOut } = useAuth()
@@ -56,6 +105,23 @@ export function AppLayout({ children, title = 'Dashboard', headerRight }: AppLay
     }
   })
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [openGroups, setOpenGroups] = useState<Record<SidebarGroup['id'], boolean>>(() => {
+    const defaults = getDefaultOpenGroups()
+
+    try {
+      const saved = localStorage.getItem('sidebar-open-groups')
+      if (!saved) return defaults
+      const parsed = JSON.parse(saved) as Partial<Record<SidebarGroup['id'], unknown>>
+
+      return {
+        finance: typeof parsed.finance === 'boolean' ? parsed.finance : defaults.finance,
+        agency: typeof parsed.agency === 'boolean' ? parsed.agency : defaults.agency,
+        other: typeof parsed.other === 'boolean' ? parsed.other : defaults.other,
+      }
+    } catch {
+      return defaults
+    }
+  })
 
   useEffect(() => {
     try {
@@ -65,14 +131,68 @@ export function AppLayout({ children, title = 'Dashboard', headerRight }: AppLay
     }
   }, [isCollapsed])
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebar-open-groups', JSON.stringify(openGroups))
+    } catch {
+      // ignore
+    }
+  }, [openGroups])
+
   const handleLogout = async () => {
     await signOut()
     navigate('/login')
   }
 
   const SidebarContent = ({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) => {
+    const flatItems = sidebarGroups.flatMap((g) => g.items)
+
+    const renderItem = (item: SidebarItem) => {
+      const Icon = item.icon
+
+      if (item.disabled) {
+        return (
+          <div
+            key={item.label}
+            className={cn(
+              'flex items-center rounded-lg text-sm font-medium transition-colors',
+              collapsed ? 'h-10 justify-center px-2' : 'gap-3 px-3 py-2.5',
+              'text-muted-foreground/60 cursor-not-allowed'
+            )}
+            title={collapsed ? item.label : 'Yakında'}
+          >
+            <Icon className="h-5 w-5" />
+            {!collapsed && item.label}
+          </div>
+        )
+      }
+
+      return (
+        <NavLink
+          key={item.path}
+          to={item.path as string}
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            cn(
+              'flex items-center rounded-lg text-sm font-medium transition-colors',
+              collapsed ? 'h-10 justify-center px-2' : 'gap-3 px-3 py-2.5',
+              isActive
+                ? collapsed
+                  ? 'bg-primary/15 text-primary'
+                  : 'bg-primary/10 text-primary font-semibold'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )
+          }
+          title={collapsed ? item.label : undefined}
+        >
+          <Icon className="h-5 w-5" />
+          {!collapsed && item.label}
+        </NavLink>
+      )
+    }
+
     return (
-      <div className="flex h-full flex-col">
+      <div className="flex h-full min-h-0 flex-col">
         <div
           className={cn(
             'flex h-16 items-center border-b border-border',
@@ -84,32 +204,39 @@ export function AppLayout({ children, title = 'Dashboard', headerRight }: AppLay
           </h1>
         </div>
 
-        <nav className={cn('flex-1 space-y-1', collapsed ? 'p-2' : 'p-4')}>
-          {menuItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                onClick={onNavigate}
-                className={({ isActive }) =>
-                  cn(
-                    'flex items-center rounded-lg text-sm font-medium transition-colors',
-                    collapsed ? 'h-10 justify-center px-2' : 'gap-3 px-3 py-2.5',
-                    isActive
-                      ? collapsed
-                        ? 'bg-primary/15 text-primary'
-                        : 'bg-primary/10 text-primary font-semibold'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                  )
-                }
-                title={collapsed ? item.label : undefined}
-              >
-                <Icon className="h-5 w-5" />
-                {!collapsed && item.label}
-              </NavLink>
-            )
-          })}
+        <nav className={cn('flex-1 min-h-0 overflow-y-auto space-y-1', collapsed ? 'p-2' : 'p-4')}>
+          {collapsed ? (
+            flatItems.map(renderItem)
+          ) : (
+            <div className="space-y-2">
+              {sidebarGroups.map((group) => {
+                const isOpen = openGroups[group.id]
+
+                return (
+                  <div key={group.id}>
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex w-full items-center justify-between rounded-md px-2 py-2 text-xs font-semibold tracking-wider text-muted-foreground transition-colors',
+                        'hover:bg-accent hover:text-accent-foreground'
+                      )}
+                      onClick={() => setOpenGroups((prev) => ({ ...prev, [group.id]: !prev[group.id] }))}
+                    >
+                      <span>{group.title}</span>
+                      <ChevronDown
+                        className={cn(
+                          'h-4 w-4 transition-transform duration-200',
+                          isOpen ? 'rotate-180' : 'rotate-0'
+                        )}
+                      />
+                    </button>
+
+                    {isOpen && <div className="space-y-1 pt-1">{group.items.map(renderItem)}</div>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </nav>
 
         <div className={cn('border-t border-border', collapsed ? 'p-2' : 'p-4')}>

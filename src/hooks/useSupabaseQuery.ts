@@ -20,6 +20,441 @@ type ActivityRow = Tables['activities']['Row']
 type NoteRow = Tables['notes']['Row']
 type AttachmentRow = Tables['attachments']['Row']
 
+export type AirlineRow = {
+  id: string
+  code: string
+  name: string
+  created_at: string
+}
+
+export type CustomerTransactionType = 'debt' | 'credit'
+export type CustomerTransactionSource = 'manual'
+
+export type CustomerTransactionRow = {
+  id: string
+  customer_id: string
+  transaction_type: CustomerTransactionType
+  source: CustomerTransactionSource
+  amount: number
+  transaction_date: string
+  description: string
+  currency: string
+}
+
+export type TicketStatus = 'sales' | 'void' | 'refund'
+export type TicketInvoiceStatus = 'pending' | 'invoiced'
+
+export type HotelBoardType = 'RO' | 'BB' | 'HB' | 'FB' | 'AI' | 'UAI' | 'NAI'
+
+export type HotelReservationStatus = 'confirmed' | 'pending' | 'cancelled'
+export type HotelReservationInvoiceStatus = 'pending' | 'invoiced'
+export type HotelCurrency = 'TRY' | 'USD' | 'EUR'
+export type HotelPricingMethod = 'markup' | 'commission'
+
+export type HotelReservationRow = {
+  id: string
+  created_at: string
+  hotel_name: string | null
+  location: string | null
+  check_in_date: string | null
+  check_out_date: string | null
+  room_type: string | null
+  board_type: HotelBoardType | null
+  guest_name: string | null
+  adult_count: number | null
+  child_count: number | null
+  net_price: number | null
+  sell_price: number | null
+  pricing_method?: HotelPricingMethod | null
+  commission_rate?: number | null
+  profit?: number | null
+  currency?: HotelCurrency | null
+  customer_id: string | null
+  user_id: string
+  supplier_name: string | null
+  confirmation_number: string | null
+  status: HotelReservationStatus | null
+  invoice_status: HotelReservationInvoiceStatus | null
+}
+
+export type HotelReservationUpsertPayload = {
+  id?: string
+  hotel_name: string
+  location: string
+  check_in_date: string
+  check_out_date: string
+  room_type: string
+  board_type: HotelBoardType
+  guest_name: string
+  adult_count: number
+  child_count: number
+  net_price: number
+  sell_price: number
+  pricing_method: HotelPricingMethod
+  commission_rate: number
+  currency: HotelCurrency
+  customer_id: string | null
+  user_id: string
+  supplier_name: string
+  confirmation_number: string
+  status: HotelReservationStatus
+  invoice_status: HotelReservationInvoiceStatus
+}
+
+export type TicketRow = {
+  id: string
+  user_id: string
+  customer_id: string | null
+  pnr_code: string | null
+  issue_date: string | null
+  base_fare: number | null
+  tax_amount: number | null
+  service_fee: number | null
+  status: TicketStatus
+  invoice_status: TicketInvoiceStatus
+  net_price?: number | null
+  sell_price?: number | null
+  ticket_passengers?: TicketPassengerRow[]
+  ticket_segments?: TicketSegmentRow[]
+}
+
+export function useAirlines() {
+  return useQuery<AirlineRow[]>({
+    queryKey: ['airlines'],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from('airlines')
+        .select('id, code, name, created_at')
+        .order('code', { ascending: true })
+
+      if (error) throw error
+      return (data ?? []) as AirlineRow[]
+    },
+  })
+}
+
+export function useCustomerTransactions(customerId?: string | null) {
+  return useQuery<CustomerTransactionRow[]>({
+    queryKey: ['customer_transactions', customerId],
+    enabled: Boolean(customerId),
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from('customer_transactions')
+        .select('id, customer_id, transaction_type, source, amount, transaction_date, description, currency')
+        .eq('customer_id', customerId as string)
+        .order('transaction_date', { ascending: false })
+
+      if (error) throw error
+      return (data ?? []) as CustomerTransactionRow[]
+    },
+  })
+}
+
+export function useCreateCustomerTransaction() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: {
+      customer_id: string
+      transaction_type: CustomerTransactionType
+      amount: number
+      transaction_date: string
+      description: string
+      currency?: string
+    }) => {
+      const patch = {
+        customer_id: payload.customer_id,
+        transaction_type: payload.transaction_type,
+        source: 'manual' as const,
+        amount: payload.amount,
+        transaction_date: payload.transaction_date,
+        description: payload.description,
+        currency: payload.currency ?? 'TRY',
+      }
+
+      const { data, error } = await (supabase as any)
+        .from('customer_transactions')
+        .insert(patch)
+        .select('id, customer_id, transaction_type, source, amount, transaction_date, description, currency')
+
+      if (error) throw error
+      return (data ?? []) as CustomerTransactionRow[]
+    },
+    onSuccess: async (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['customer_transactions', vars.customer_id] })
+    },
+  })
+}
+
+export function useUpdateCustomerTransaction() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: {
+      id: string
+      patch: {
+        customer_id: string
+        transaction_type: CustomerTransactionType
+        amount: number
+        transaction_date: string
+        description: string
+        currency: string
+      }
+    }) => {
+      const updatePatch = {
+        customer_id: payload.patch.customer_id,
+        transaction_type: payload.patch.transaction_type,
+        amount: payload.patch.amount,
+        transaction_date: payload.patch.transaction_date,
+        description: payload.patch.description,
+        currency: payload.patch.currency,
+      }
+
+      const { data, error } = await (supabase as any)
+        .from('customer_transactions')
+        .update(updatePatch)
+        .eq('id', payload.id)
+        .select('id, customer_id, transaction_type, source, amount, transaction_date, description, currency')
+
+      if (error) throw error
+      return (data ?? []) as CustomerTransactionRow[]
+    },
+    onSuccess: async (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['customer_transactions', vars.patch.customer_id] })
+    },
+  })
+}
+
+export function useDeleteCustomerTransaction() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; customer_id: string }) => {
+      const { error } = await (supabase as any).from('customer_transactions').delete().eq('id', payload.id)
+      if (error) throw error
+
+      return payload
+    },
+    onSuccess: async (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['customer_transactions', vars.customer_id] })
+    },
+  })
+}
+
+export function useCreateAirline() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { code: string; name: string }) => {
+      const patch = {
+        code: payload.code.trim(),
+        name: payload.name.trim(),
+      }
+
+      const { data, error } = await (supabase as any)
+        .from('airlines')
+        .insert(patch)
+        .select('id, code, name, created_at')
+        .single()
+
+      if (error) throw error
+      return (data ?? null) as AirlineRow | null
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['airlines'] })
+    },
+  })
+}
+
+export function useUpdateAirline() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; patch: { code: string; name: string } }) => {
+      const patch = {
+        code: payload.patch.code.trim(),
+        name: payload.patch.name.trim(),
+      }
+
+      const { data, error } = await (supabase as any)
+        .from('airlines')
+        .update(patch)
+        .eq('id', payload.id)
+        .select('id, code, name, created_at')
+        .single()
+
+      if (error) throw error
+      return (data ?? null) as AirlineRow | null
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['airlines'] })
+    },
+  })
+}
+
+export function useDeleteAirline() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; itemName: string }) => {
+      const { error } = await (supabase as any).from('airlines').delete().eq('id', payload.id)
+      if (error) throw error
+
+      await logActivity(`"${payload.itemName}" havayolu silindi.`)
+      return payload.id
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['airlines'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useHotelReservations() {
+  return useQuery<HotelReservationRow[]>({
+    queryKey: ['hotel_reservations'],
+    queryFn: async () => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      let q = (supabase as any)
+        .from('hotel_reservations')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      q = q.eq('user_id', userId)
+
+      const { data, error } = await q
+      if (error) throw error
+      return (data ?? []) as HotelReservationRow[]
+    },
+  })
+}
+
+export function useUpsertHotelReservation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: HotelReservationUpsertPayload) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      if (payload.user_id !== userId) {
+        throw new Error('Yetkisiz işlem')
+      }
+
+      const id = (payload as any)?.id as string | undefined
+
+      const insertObj = {
+        hotel_name: payload.hotel_name,
+        location: payload.location,
+        check_in_date: payload.check_in_date,
+        check_out_date: payload.check_out_date,
+        room_type: payload.room_type,
+        board_type: payload.board_type,
+        guest_name: payload.guest_name,
+        adult_count: payload.adult_count,
+        child_count: payload.child_count,
+        net_price: payload.net_price,
+        sell_price: payload.sell_price,
+        pricing_method: payload.pricing_method,
+        commission_rate: payload.commission_rate,
+        currency: payload.currency,
+        customer_id: payload.customer_id,
+        user_id: payload.user_id,
+        supplier_name: payload.supplier_name,
+        confirmation_number: payload.confirmation_number,
+        status: payload.status,
+        invoice_status: payload.invoice_status,
+      }
+
+      if (id) {
+        const { data, error } = await (supabase as any)
+          .from('hotel_reservations')
+          .update(insertObj)
+          .eq('id', id)
+          .select()
+          .single()
+        if (error) throw error
+        await logActivity('Otel rezervasyonu güncellendi.')
+        return data as HotelReservationRow
+      }
+
+      const { data, error } = await (supabase as any)
+        .from('hotel_reservations')
+        .insert(insertObj)
+        .select()
+        .single()
+      if (error) throw error
+
+      await logActivity('Yeni otel rezervasyonu eklendi.')
+      return data as HotelReservationRow
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hotel_reservations'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useDeleteHotelReservation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string }) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const { error } = await (supabase as any)
+        .from('hotel_reservations')
+        .delete()
+        .eq('id', payload.id)
+      if (error) throw error
+
+      await logActivity('Otel rezervasyonu silindi.')
+      return true
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hotel_reservations'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export type TicketPassengerRow = {
+  ticket_id: string
+  passenger_name: string | null
+  ticket_number: string | null
+  passenger_type: string | null
+}
+
+export type TicketSegmentRow = {
+  ticket_id: string
+  airline: string | null
+  flight_no: string | null
+  origin: string | null
+  destination: string | null
+  flight_date: string | null
+}
+
+export type TicketUpsertPayload = {
+  id?: string
+  pnr_code: string
+  issue_date: string
+  base_fare: number
+  tax_amount: number
+  service_fee: number
+  customer_id: string | null
+  user_id: string
+  status: TicketStatus
+  invoice_status: TicketInvoiceStatus
+  passengers: Array<{ passenger_name: string; ticket_number: string; passenger_type: string }>
+  segments: Array<{ airline: string; flight_no: string; origin: string; destination: string; flight_date: string }>
+}
+
 const CUSTOMER_FILES_BUCKET = (import.meta as any).env?.VITE_CUSTOMER_FILES_BUCKET || 'customer-files'
 
 async function logActivity(message: string) {
@@ -50,6 +485,143 @@ export function useCategories(type?: 'income' | 'expense') {
       const { data, error } = await query.order('created_at', { ascending: false })
       if (error) throw error
       return data ?? []
+    },
+  })
+}
+
+export function useInvoiceTicket() {
+  const queryClient = useQueryClient()
+
+  const createInvoiceNumber = () => {
+    const now = new Date()
+    const yyyy = now.getFullYear()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
+    const rand = Math.floor(Math.random() * 9000 + 1000)
+    return `INV-${yyyy}${mm}${dd}-${rand}`
+  }
+
+  return useMutation({
+    mutationFn: async (payload: { ticketId: string }) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const { data: ticket, error: ticketError } = await (supabase as any)
+        .from('tickets')
+        .select('*, ticket_passengers(*)')
+        .eq('id', payload.ticketId)
+        .single()
+      if (ticketError) throw ticketError
+
+      if (String(ticket?.invoice_status ?? '') === 'invoiced') {
+        throw new Error('Bu bilet için zaten fatura kesilmiş.')
+      }
+
+      const customerId = ticket?.customer_id as string | null
+      if (!customerId) {
+        throw new Error('Fatura oluşturmak için bilette müşteri seçili olmalı.')
+      }
+
+      const pnr = String(ticket?.pnr_code ?? '-')
+      const firstPax = Array.isArray(ticket?.ticket_passengers) ? ticket.ticket_passengers[0] : null
+      const passengerName = String(firstPax?.passenger_name ?? '-')
+      const ticketNumber = String(firstPax?.ticket_number ?? '-')
+
+      const baseFare = Number(ticket?.base_fare ?? 0)
+      const taxAmount = Number(ticket?.tax_amount ?? 0)
+      const serviceFee = Number(ticket?.service_fee ?? 0)
+
+      const subtotal = baseFare + serviceFee
+      const totalAmount = subtotal + taxAmount
+
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const notes = `Uçak Bileti - PNR: ${pnr} - ${passengerName} - Bilet: ${ticketNumber}`
+
+      const invoiceInsert: Tables['invoices']['Insert'] = {
+        user_id: userId,
+        customer_id: customerId,
+        invoice_number: createInvoiceNumber(),
+        invoice_date: todayStr,
+        due_date: todayStr,
+        status: 'sent',
+        subtotal,
+        tax_amount: taxAmount,
+        total_amount: totalAmount,
+        notes,
+      }
+
+      const { data: invoice, error: invoiceError } = await supabase
+        .from('invoices')
+        .insert(invoiceInsert)
+        .select()
+        .single()
+      if (invoiceError) throw invoiceError
+
+      const invoiceId = (invoice as any).id as string
+
+      const invoiceItem: Tables['invoice_items']['Insert'] = {
+        invoice_id: invoiceId,
+        description: `Uçak Bileti - PNR: ${pnr} - ${passengerName}`,
+        quantity: 1,
+        unit_price: totalAmount,
+        tax_rate: 0,
+        amount: totalAmount,
+      }
+
+      const { error: invoiceItemError } = await supabase.from('invoice_items').insert(invoiceItem)
+      if (invoiceItemError) {
+        await supabase.from('invoices').delete().eq('id', invoiceId)
+        throw invoiceItemError
+      }
+
+      const { data: updatedTicket, error: ticketUpdateError } = await (supabase as any)
+        .from('tickets')
+        .update({ invoice_status: 'invoiced' })
+        .eq('id', payload.ticketId)
+        .select()
+        .single()
+      if (ticketUpdateError) throw ticketUpdateError
+
+      await logActivity('Biletten fatura oluşturuldu ve bilet güncellendi.')
+
+      return {
+        invoiceId,
+        invoiceNumber: String((invoice as any).invoice_number ?? ''),
+        ticket: updatedTicket as TicketRow,
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useUpdateTicketStatus() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string; status: TicketStatus }) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const { data, error } = await (supabase as any)
+        .from('tickets')
+        .update({ status: payload.status })
+        .eq('id', payload.id)
+        .select()
+        .single()
+      if (error) throw error
+
+      await logActivity('Bilet durumu güncellendi.')
+      return data as TicketRow
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
     },
   })
 }
@@ -1065,6 +1637,226 @@ export function useDeleteTransaction() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useTicketsByDateRange(params?: { from?: string; to?: string }) {
+  const fromKey = params?.from ?? 'all'
+  const toKey = params?.to ?? 'all'
+
+  return useQuery<TicketRow[]>({
+    queryKey: ['tickets', fromKey, toKey],
+    queryFn: async () => {
+      let q = (supabase as any)
+        .from('tickets')
+        .select('*, ticket_passengers(*), ticket_segments(*)')
+        .order('issue_date', { ascending: false })
+
+      if (params?.from) {
+        q = q.gte('issue_date', params.from)
+      }
+
+      if (params?.to) {
+        q = q.lte('issue_date', params.to)
+      }
+
+      const { data, error } = await q
+      if (error) throw error
+      return (data ?? []) as TicketRow[]
+    },
+  })
+}
+
+export function useCreateTicket() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: TicketUpsertPayload) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      if (payload.user_id !== userId) {
+        throw new Error('Yetkisiz işlem')
+      }
+
+      const id = (payload as any)?.id as string | undefined
+
+       const parentInsert = {
+         pnr_code: payload.pnr_code,
+         issue_date: payload.issue_date,
+         base_fare: payload.base_fare,
+         tax_amount: payload.tax_amount,
+         service_fee: payload.service_fee,
+         customer_id: payload.customer_id,
+         user_id: payload.user_id,
+         status: payload.status,
+         invoice_status: payload.invoice_status,
+       }
+
+       const passengerRows = (payload.passengers ?? []).map((p) => ({
+         passenger_name: p.passenger_name,
+         ticket_number: p.ticket_number,
+         passenger_type: p.passenger_type,
+       }))
+
+       const segmentRows = (payload.segments ?? []).map((s) => ({
+         airline: s.airline,
+         flight_no: s.flight_no,
+         origin: s.origin,
+         destination: s.destination,
+         flight_date: s.flight_date,
+       }))
+
+      if (id) {
+        const { error } = await (supabase as any)
+          .from('tickets')
+          .update(parentInsert)
+          .eq('id', id)
+          .select()
+          .single()
+        if (error) throw error
+
+        const { error: delPaxErr } = await (supabase as any)
+          .from('ticket_passengers')
+          .delete()
+          .eq('ticket_id', id)
+        if (delPaxErr) throw delPaxErr
+
+        const { error: delSegErr } = await (supabase as any)
+          .from('ticket_segments')
+          .delete()
+          .eq('ticket_id', id)
+        if (delSegErr) throw delSegErr
+
+        if (passengerRows.length) {
+          const { error: paxErr } = await (supabase as any)
+            .from('ticket_passengers')
+            .insert(passengerRows.map((p) => ({ ...p, ticket_id: id })))
+          if (paxErr) throw paxErr
+        }
+
+        if (segmentRows.length) {
+          const { error: segErr } = await (supabase as any)
+            .from('ticket_segments')
+            .insert(segmentRows.map((s) => ({ ...s, ticket_id: id })))
+          if (segErr) throw segErr
+        }
+
+        const { data: full, error: fullErr } = await (supabase as any)
+          .from('tickets')
+          .select('*, ticket_passengers(*), ticket_segments(*)')
+          .eq('id', id)
+          .single()
+        if (fullErr) throw fullErr
+
+        return full as TicketRow
+      }
+
+      const { data, error } = await (supabase as any)
+        .from('tickets')
+        .insert(parentInsert)
+        .select()
+        .single()
+      if (error) throw error
+
+      const ticketId = (data as any).id as string
+
+      if (passengerRows.length) {
+        const { error: paxErr } = await (supabase as any)
+          .from('ticket_passengers')
+          .insert(passengerRows.map((p) => ({ ...p, ticket_id: ticketId })))
+        if (paxErr) {
+          await (supabase as any).from('tickets').delete().eq('id', ticketId)
+          throw paxErr
+        }
+      }
+
+      if (segmentRows.length) {
+        const { error: segErr } = await (supabase as any)
+          .from('ticket_segments')
+          .insert(segmentRows.map((s) => ({ ...s, ticket_id: ticketId })))
+        if (segErr) {
+          await (supabase as any).from('ticket_passengers').delete().eq('ticket_id', ticketId)
+          await (supabase as any).from('tickets').delete().eq('id', ticketId)
+          throw segErr
+        }
+      }
+
+      const { data: full, error: fullErr } = await (supabase as any)
+        .from('tickets')
+        .select('*, ticket_passengers(*), ticket_segments(*)')
+        .eq('id', ticketId)
+        .single()
+      if (fullErr) throw fullErr
+
+      return full as TicketRow
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useDeleteTicket() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string }) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const { error: paxErr } = await (supabase as any)
+        .from('ticket_passengers')
+        .delete()
+        .eq('ticket_id', payload.id)
+      if (paxErr) throw paxErr
+
+      const { error: segErr } = await (supabase as any)
+        .from('ticket_segments')
+        .delete()
+        .eq('ticket_id', payload.id)
+      if (segErr) throw segErr
+
+      const { error } = await (supabase as any).from('tickets').delete().eq('id', payload.id)
+      if (error) throw error
+
+      await logActivity('Bilet kaydı silindi.')
+      return true
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
+    },
+  })
+}
+
+export function useMarkTicketInvoiced() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: { id: string }) => {
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth.user?.id
+      if (!userId) throw new Error('Oturum bulunamadı')
+
+      const { data, error } = await (supabase as any)
+        .from('tickets')
+        .update({ invoice_status: 'invoiced' })
+        .eq('id', payload.id)
+        .select()
+        .single()
+      if (error) throw error
+
+      await logActivity('Bilet için fatura kesildi.')
+      return data as TicketRow
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
       queryClient.invalidateQueries({ queryKey: ['activity_logs'] })
     },
   })
