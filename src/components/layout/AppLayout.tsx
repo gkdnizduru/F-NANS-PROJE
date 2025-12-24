@@ -12,10 +12,8 @@ import {
   ShoppingBag,
   Kanban,
   Calendar,
-  BedDouble,
   FileSignature,
   FileText,
-  Plane,
   Users,
   Settings,
   LogOut,
@@ -41,7 +39,7 @@ type SidebarItem = {
 }
 
 type SidebarGroup = {
-  id: 'finance' | 'agency' | 'other'
+  id: 'finance' | 'other'
   title: string
   defaultOpen: boolean
   items: SidebarItem[]
@@ -64,18 +62,6 @@ const sidebarGroups: SidebarGroup[] = [
     ],
   },
   {
-    id: 'agency',
-    title: 'ACENTE OPERASYON',
-    defaultOpen: false,
-    items: [
-      { path: '/agency/tickets', label: 'Biletleme (PNR)', icon: FileText },
-      { path: '/agency/hotels', label: 'Otel Yönetimi', icon: BedDouble },
-      { path: '/agency/reports/airlines', label: 'Havayolu Raporu', icon: Plane },
-      { path: '/agency/settings/airlines', label: 'Havayolu Tanımları', icon: Settings },
-      { label: 'Vize İşlemleri', icon: FileSignature, disabled: true },
-    ],
-  },
-  {
     id: 'other',
     title: 'DİĞER',
     defaultOpen: true,
@@ -88,7 +74,6 @@ const sidebarGroups: SidebarGroup[] = [
 
 const getDefaultOpenGroups = (): Record<SidebarGroup['id'], boolean> => ({
   finance: sidebarGroups.find((g) => g.id === 'finance')?.defaultOpen ?? true,
-  agency: sidebarGroups.find((g) => g.id === 'agency')?.defaultOpen ?? false,
   other: sidebarGroups.find((g) => g.id === 'other')?.defaultOpen ?? true,
 })
 
@@ -115,7 +100,6 @@ export function AppLayout({ children, title = 'Dashboard', headerRight }: AppLay
 
       return {
         finance: typeof parsed.finance === 'boolean' ? parsed.finance : defaults.finance,
-        agency: typeof parsed.agency === 'boolean' ? parsed.agency : defaults.agency,
         other: typeof parsed.other === 'boolean' ? parsed.other : defaults.other,
       }
     } catch {

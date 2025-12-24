@@ -19,10 +19,6 @@ import { SettingsPage } from './pages/SettingsPage'
 import { Activities } from './pages/Activities'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { UpdatePassword } from './pages/UpdatePassword'
-import { AgencyTicketsPage } from './pages/AgencyTicketsPage'
-import { AgencyHotelsPage } from './pages/AgencyHotelsPage'
-import { AgencyAirlinesSettingsPage } from './pages/AgencyAirlinesSettingsPage'
-import { AgencyAirlinesReportPage } from './pages/AgencyAirlinesReportPage'
 import { PublicQuote } from './pages/public/PublicQuote'
 import { PublicInvoice } from './pages/public/PublicInvoice'
 
@@ -140,38 +136,6 @@ function App() {
               element={
                 <ProtectedRoute>
                   <AccountsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/agency/tickets"
-              element={
-                <ProtectedRoute>
-                  <AgencyTicketsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/agency/hotels"
-              element={
-                <ProtectedRoute>
-                  <AgencyHotelsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/agency/settings/airlines"
-              element={
-                <ProtectedRoute>
-                  <AgencyAirlinesSettingsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/agency/reports/airlines"
-              element={
-                <ProtectedRoute>
-                  <AgencyAirlinesReportPage />
                 </ProtectedRoute>
               }
             />
