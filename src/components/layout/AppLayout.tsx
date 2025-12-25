@@ -184,7 +184,7 @@ export function AppLayout({ children, title = 'Dashboard', headerRight }: AppLay
           )}
         >
           <h1 className={cn('font-bold tracking-tight', collapsed ? 'text-lg' : 'text-xl')}>
-            {collapsed ? 'ERP' : 'ERP Panel'}
+            {collapsed ? 'FİNANS' : 'FİNANS PANEL'}
           </h1>
         </div>
 

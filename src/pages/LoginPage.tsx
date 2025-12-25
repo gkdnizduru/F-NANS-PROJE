@@ -55,7 +55,7 @@ export function LoginPage() {
             <div className="h-10 w-10 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center">
               <LayoutDashboard className="h-5 w-5 text-white" />
             </div>
-            <div className="text-white font-semibold tracking-tight">ERM Dashboard</div>
+            <div className="text-white font-semibold tracking-tight">FİNANS TAKİP</div>
           </div>
 
           <div className="mt-10">
